@@ -1,6 +1,6 @@
 ---
-description: How to extend the laptop-side screen tool (rt100screen.py, screenproto.py) safely — pages, widgets, services.
-globs: rt100screen.py,screenproto.py,re/custom/emu_custom.py
+description: How to extend the laptop-side screen tool (screen/rt100screen.py, screen/screenproto.py) safely — pages, widgets, services.
+globs: screen/**/*.py,device/custom/emu_custom.py
 alwaysApply: false
 ---
 
@@ -27,9 +27,9 @@ autostart, pacing. Use `.venv/bin/python`.
 - No new pip dependencies without asking; prefer stdlib, `psutil`, `busctl --json`.
 
 ## Testing order
-1. `.venv/bin/python rt100screen.py <action> --dry-run` — inspect packets.
+1. `.venv/bin/python screen/rt100screen.py <action> --dry-run` — inspect packets.
 2. If you changed `clock_page`/`system_page`/`media_page` signatures, update
-   `re/custom/emu_custom.py`, then run it and look at `re/custom/out/emu_*.png`.
+   `device/custom/emu_custom.py`, then run it and look at `device/custom/out/emu_*.png`.
 3. Only then send to the device (check `pgrep -af rt100screen` first) and ask the user
    what the screen shows — you cannot see it.
 
@@ -37,5 +37,5 @@ autostart, pacing. Use `.venv/bin/python`.
 - Do not edit `Link._session` framing (0x31 count in bytes 1-2, checksum at byte 7,
   no-op padding in `finally`) or remove the pacing sleeps.
 - Do not send packets outside `Link.send`.
-- Autostart (systemd user unit) must run `rt100screen.py run` only, restart on
+- Autostart (systemd user unit) must run `screen/rt100screen.py run` only, restart on
   failure with a delay of at least 5 s, and the user must approve enabling it.

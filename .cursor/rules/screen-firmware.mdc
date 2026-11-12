@@ -1,14 +1,14 @@
 ---
-description: Constraints for the custom screen firmware (re/custom) and reverse-engineering tools. Firmware changes are expert-only.
-globs: re/**
+description: Constraints for the custom screen firmware (device/custom) and reverse-engineering tools. Firmware changes are expert-only.
+globs: device/**,research/**
 alwaysApply: false
 ---
 
-# Custom screen firmware (`re/custom/`)
+# Custom screen firmware (`device/custom/`)
 
 Default stance: **do not change the firmware.** Almost every feature (pages,
 weather, notifications, images, services) belongs in the laptop tool
-(`rt100screen.py`). Only touch firmware files if the user asks for a firmware
+(`screen/rt100screen.py`). Only touch firmware files if the user asks for a firmware
 change specifically, and even then never flash (see hardware-safety rule).
 
 ## Do not edit
@@ -17,7 +17,7 @@ change specifically, and even then never flash (see hardware-safety rule).
   (`FRAME_SITE*`, `LOOP_SITE`, `ZI_*`, `APP_*`, `BASE_SHA256`). These came from
   disassembly of firmware v506; a wrong value bricks the screen.
 - The wire protocol (`PKT_*`, `OP_*` values, packet layout) without changing
-  `screenproto.py` in the same change and keeping old opcodes working.
+  `screen/screenproto.py` in the same change and keeping old opcodes working.
 
 ## Invariants `custom.c` must keep (if a change is approved)
 - `custom_frame_hook` runs in the timer interrupt: no drawing, no loops over pixels,
@@ -29,9 +29,9 @@ change specifically, and even then never flash (see hardware-safety rule).
   custom mode never survives a reboot.
 - Code must end below `0x01020000`; `.bss` below `0x0002D000` (build asserts both).
 
-## Required checks after any change under `re/custom/`
+## Required checks after any change under `device/custom/`
 ```bash
-cd re/custom
+cd device/custom
 ../../.venv/bin/python build.py 2>&1 | rg -v "Forcing branch"
 ../../.venv/bin/python emu_custom.py   # must print ALL CHECKS PASSED
 ```

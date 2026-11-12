@@ -1,14 +1,3 @@
 .venv/
 __pycache__/
 *.pyc
-
-# Vendor installer and unpacked Electron runtime. The driver's JS is kept.
-*.exe
-*.dll
-*.pak
-*.dat
-*.zip
-re/driver/inst/
-re/driver/app/LICENSES.chromium.html
-re/driver/app/locales/
-re/driver/app/resources/app/node_modules/

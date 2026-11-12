@@ -6,19 +6,20 @@ alwaysApply: true
 # RT100 screen project — state and next tasks
 
 ## State (working, verified on the device)
-- Screen runs custom firmware `re/custom/out/firmwareOledFile.bin` (I2C clock fix +
+- Screen runs custom firmware `device/custom/out/firmwareOledFile.bin` (I2C clock fix +
   custom display mode). Do not rebuild/reflash it for host-side work.
-- `rt100screen.py run` rotates clock, system, now-playing and weather. A desktop
+- `screen/rt100screen.py run` rotates clock, system, now-playing and weather. A desktop
   notification (app + summary only) replaces the page for 10 s. `--no-notify` disables that.
 - Weather reads `~/.config/rt100screen.json`. It is set to London (51.513, -0.092).
-  Change it only when the user asks: `rt100screen.py location CITY`.
+  Change it only when the user asks: `screen/rt100screen.py location CITY`.
 - Agent alerts: Cursor `stop` and Claude `Stop`/`Notification` write
   `~/.local/state/rt100screen/agent.json`. The screen holds that page for 3 minutes.
   The next prompt clears it. Do not remove those hooks unless the user asks.
-- Only one sender. A second copy exits. `rt100screen.py stop` asks the running one to
+- Only one sender. A second copy exits. `screen/rt100screen.py stop` asks the running one to
   return the screen to the stock UI.
-- `rt100screen.py image` scales to 64px. `--full` allows larger and is slow.
-- `rt100.py` = vendor HID client, `screenproto.py` = packet encoder, `oled_flash.py` = flasher (forbidden, see safety rule).
+- `screen/rt100screen.py image` scales to 64px. `--full` allows larger and is slow.
+- `screen/rt100.py` = vendor HID client, `screen/screenproto.py` = packet encoder, `screen/oled_flash.py` = flasher (forbidden, see safety rule).
+- Layout: `screen/` is the laptop program, `device/` is firmware, `research/` is the dumps and the vendor driver.
 
 ## Not done yet
 - **Pacing** is still the guess of 6 µs per pixel. Change `--us-per-pixel` only while the
