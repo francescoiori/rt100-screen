@@ -1,0 +1,159 @@
+openjdk version "25.0.5" 2026-10-20 LTS
+OpenJDK Runtime Environment Temurin-25.0.5+8 (build 25.0.5+8-LTS)
+OpenJDK 64-Bit Server VM Temurin-25.0.5+8 (build 25.0.5+8-LTS, mixed mode)
+INFO  Using log config file: jar:file:/home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Framework/Generic/lib/Generic.jar!/generic.log4j.xml (LoggingInitialization)  
+INFO  Using log file: /home/francesco/.config/ghidra/ghidra_12.2_PUBLIC/application.log (LoggingInitialization)  
+INFO  Loading user preferences: /home/francesco/.config/ghidra/ghidra_12.2_PUBLIC/preferences (Preferences)  
+INFO  Searching for classes... (ClassSearcher)  
+INFO  Class search complete (761 ms) (ClassSearcher)  
+INFO  Initializing SSL Context (DefaultSSLContextInitializer)  
+INFO  Initializing Random Number Generator... (SecureRandomFactory)  
+INFO  Random Number Generator initialization complete: NativePRNGNonBlocking (SecureRandomFactory)  
+INFO  Loaded 120 trusted CA certificate(s) from /etc/ssl/certs/ca-certificates.crt (UnixSystemTrustKeyStoreUtil)  
+INFO  Loaded 120 trusted CA certificates from the OS trust store. (DefaultTrustManagerFactory)  
+INFO  Loaded 118 trusted CA certificates from the Java default trust store. (DefaultTrustManagerFactory)  
+INFO  Headless startup complete (2530 ms) (AnalyzeHeadless)  
+INFO  Class searcher loaded 224 extension points (115 false positives) (ClassSearcher)  
+INFO  HEADLESS Script Paths:
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Debug/Debugger/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/WildcardAssembler/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Processors/PIC/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/VersionTracking/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/Base/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/Swift/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Processors/Atmel/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/FileFormats/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Processors/JVM/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/BytePatterns/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/PyGhidra/ghidra_scripts
+    /home/francesco/Documents/Code/epomaker/re/tools
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/PDB/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/BSim/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/FunctionID/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/MicrosoftCodeAnalyzer/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/GnuDemangler/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/Decompiler/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Debug/Debugger-rmi-trace/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Processors/DATA/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/DecompilerDependent/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Features/SystemEmulation/ghidra_scripts
+    /home/francesco/tools/ghidra_12.2_PUBLIC/Ghidra/Processors/8051/ghidra_scripts (HeadlessAnalyzer)  
+INFO  HEADLESS: execution starts (HeadlessAnalyzer)  
+INFO  Opening existing project: /home/francesco/Documents/Code/epomaker/re/ghidra/rt100 (HeadlessAnalyzer)  
+INFO  Opening project: /home/francesco/Documents/Code/epomaker/re/ghidra/rt100 (HeadlessProject)  
+INFO  REPORT: Processing input files:  (HeadlessAnalyzer)  
+INFO       project: /home/francesco/Documents/Code/epomaker/re/ghidra/rt100 (HeadlessAnalyzer)  
+INFO  IMPORTING: file:///home/francesco/Documents/Code/epomaker/re/fw/v507/kb_app.bin (HeadlessAnalyzer)  
+INFO  Successfully applied "-loader-baseAddr" to "Base Address" (old: "null", new: "0x01010200") (ProgramLoader)  
+INFO  Using Loader: Raw Binary (ProgramLoader)  
+INFO  Using Language/Compiler: ARM:LE:32:Cortex:default (ProgramLoader)  
+INFO  Using Library Search Path: [., /bin, /lib, /lib64, /lib/x86_64-linux-gnu, /lib/aarch64-linux-gnu, /usr/bin, /usr/lib, /usr/X11R6/bin, /usr/X11R6/lib, /usr/java/packages/lib, /usr/lib64] (ProgramLoader)  
+INFO  IMPORTING: Loaded 0 additional files (HeadlessAnalyzer)  
+INFO  ANALYZING all memory and code: file:///home/francesco/Documents/Code/epomaker/re/fw/v507/kb_app.bin (HeadlessAnalyzer)  
+WARN  Decompiling 0101a85c, pcode error at 0101aaa0: Unable to resolve constructor at 0101aaa0 (DecompileCallback)  
+WARN  Decompiling 0101a85c, pcode error at 0101aa88: Unable to resolve constructor at 0101aa88 (DecompileCallback)  
+WARN  Decompiling 0101a85c, pcode error at 0101aa82: Unable to resolve constructor at 0101aa82 (DecompileCallback)  
+WARN  Decompiling 01012246, pcode error at 0101245c: Unable to resolve constructor at 0101245c (DecompileCallback)  
+WARN  Decompiling 01012246, pcode error at 01012422: Unable to resolve constructor at 01012422 (DecompileCallback)  
+WARN  Decompiling 01012246, pcode error at 010123ca: Unable to resolve constructor at 010123ca (DecompileCallback)  
+WARN  Decompiling 01012246, pcode error at 01012330: Unable to resolve constructor at 01012330 (DecompileCallback)  
+INFO  Packed database cache: /var/tmp/francesco-ghidra/packed-db-cache (PackedDatabaseCache)  
+INFO  Applied data type archive: generic_clib (ApplyDataArchiveAnalyzer)  
+WARN  Decompiling 0101ec06, pcode error at 0101ec4c: Failed to resolve varnode <thv_Qn0>, index=11 (DecompileCallback)  
+WARN  Decompiling 01012c98, pcode error at 01012de0: Unable to resolve constructor at 01012de0 (DecompileCallback)  
+WARN  Decompiling 01012c98, pcode error at 01012d0c: Unable to resolve constructor at 01012d0c (DecompileCallback)  
+WARN  Decompiling 01012c98, pcode error at 01012d06: Unable to resolve constructor at 01012d06 (DecompileCallback)  
+WARN  Decompiling 01012c98, pcode error at 01012d00: Unable to resolve constructor at 01012d00 (DecompileCallback)  
+WARN  Decompiling 01017d4c, pcode error at 01017f7a: Unable to resolve constructor at 01017f7a (DecompileCallback)  
+WARN  Decompiling 01017d4c, pcode error at 01017f72: Unable to resolve constructor at 01017f72 (DecompileCallback)  
+WARN  Decompiling 01013218, pcode error at 01013464: Unable to resolve constructor at 01013464 (DecompileCallback)  
+WARN  Decompiling 01013218, pcode error at 0101337c: Unable to resolve constructor at 0101337c (DecompileCallback)  
+WARN  Decompiling 01013218, pcode error at 010132ca: Unable to resolve constructor at 010132ca (DecompileCallback)  
+WARN  Decompiling 01012bee, pcode error at 01012de0: Unable to resolve constructor at 01012de0 (DecompileCallback)  
+WARN  Decompiling 01012bee, pcode error at 01012d0c: Unable to resolve constructor at 01012d0c (DecompileCallback)  
+WARN  Decompiling 01012bee, pcode error at 01012d06: Unable to resolve constructor at 01012d06 (DecompileCallback)  
+WARN  Decompiling 01012bee, pcode error at 01012d00: Unable to resolve constructor at 01012d00 (DecompileCallback)  
+WARN  Decompiling 01013310, pcode error at 01013552: Failed to resolve varnode <thv_Qd1>, index=15 (DecompileCallback)  
+WARN  Decompiling 01013310, pcode error at 010134b8: Unable to resolve constructor at 010134b8 (DecompileCallback)  
+WARN  Decompiling 01013310, pcode error at 0101347c: Failed to resolve varnode <thv_Qn1>, index=13 (DecompileCallback)  
+WARN  Decompiling 01013310, pcode error at 01013464: Unable to resolve constructor at 01013464 (DecompileCallback)  
+WARN  Decompiling 01014bfc, pcode error at 01014dec: Unable to resolve constructor at 01014dec (DecompileCallback)  
+WARN  Decompiling 010114fe, pcode error at 0101179e: Unable to resolve constructor at 0101179e (DecompileCallback)  
+WARN  Decompiling 010114fe, pcode error at 01011700: Unable to resolve constructor at 01011700 (DecompileCallback)  
+WARN  Decompiling 0101669a, pcode error at 010167f8: Unable to resolve constructor at 010167f8 (DecompileCallback)  
+WARN  Decompiling 01016f9e, pcode error at 01017130: Unable to resolve constructor at 01017130 (DecompileCallback)  
+WARN  Decompiling 01016f9e, pcode error at 0101712c: Unable to resolve constructor at 0101712c (DecompileCallback)  
+INFO  -----------------------------------------------------
+    ARM Constant Reference Analyzer            0.714 secs
+    ARM Symbol                                 0.001 secs
+    ASCII Strings                              0.220 secs
+    Apply Data Archives                        0.455 secs
+    Call-Fixup Installer                       0.007 secs
+    Create Address Tables                      0.011 secs
+    Create Address Tables - One Time           0.037 secs
+    Create Function                            0.124 secs
+    Data Reference                             0.008 secs
+    Decompiler Switch Analysis                 5.346 secs
+    Demangler GNU                              0.011 secs
+    Disassemble                                0.222 secs
+    Disassemble Entry Points                   0.002 secs
+    Embedded Media                             0.007 secs
+    External Entry References                  0.000 secs
+    Function ID                                0.016 secs
+    Function Start Pre Search                  0.014 secs
+    Function Start Search                      0.131 secs
+    Function Start Search After Code           0.043 secs
+    Function Start Search After Data           0.003 secs
+    Function Start Search delayed - One Time   0.001 secs
+    Non-Returning Functions - Discovered       0.044 secs
+    Reference                                  0.106 secs
+    Shared Return Calls                        0.020 secs
+    Source Language Support                    0.001 secs
+    Stack                                      0.399 secs
+    Subroutine References                      0.180 secs
+    Subroutine References - One Time           0.001 secs
+-----------------------------------------------------
+     Total Time   8 secs
+-----------------------------------------------------
+ (AutoAnalysisManager)  
+INFO  REPORT: Analysis succeeded for file: file:///home/francesco/Documents/Code/epomaker/re/fw/v507/kb_app.bin (HeadlessAnalyzer)  
+INFO  REPORT: Execute script: DumpDecomp.java '/home/francesco/Documents/Code/epomaker/re/decomp'  (HeadlessAnalyzer)  
+INFO  SCRIPT: /home/francesco/Documents/Code/epomaker/re/tools/DumpDecomp.java (HeadlessAnalyzer)  
+WARN  Decompiling 010114fe, pcode error at 0101179e: Unable to resolve constructor at 0101179e (DecompileCallback)  
+WARN  Decompiling 010114fe, pcode error at 01011700: Unable to resolve constructor at 01011700 (DecompileCallback)  
+WARN  Decompiling 01012246, pcode error at 0101245c: Unable to resolve constructor at 0101245c (DecompileCallback)  
+WARN  Decompiling 01012246, pcode error at 01012422: Unable to resolve constructor at 01012422 (DecompileCallback)  
+WARN  Decompiling 01012246, pcode error at 010123ca: Unable to resolve constructor at 010123ca (DecompileCallback)  
+WARN  Decompiling 01012246, pcode error at 01012330: Unable to resolve constructor at 01012330 (DecompileCallback)  
+WARN  Decompiling 01012bee, pcode error at 01012de0: Unable to resolve constructor at 01012de0 (DecompileCallback)  
+WARN  Decompiling 01012bee, pcode error at 01012d0c: Unable to resolve constructor at 01012d0c (DecompileCallback)  
+WARN  Decompiling 01012bee, pcode error at 01012d06: Unable to resolve constructor at 01012d06 (DecompileCallback)  
+WARN  Decompiling 01012bee, pcode error at 01012d00: Unable to resolve constructor at 01012d00 (DecompileCallback)  
+WARN  Decompiling 01012c98, pcode error at 01012de0: Unable to resolve constructor at 01012de0 (DecompileCallback)  
+WARN  Decompiling 01012c98, pcode error at 01012d0c: Unable to resolve constructor at 01012d0c (DecompileCallback)  
+WARN  Decompiling 01012c98, pcode error at 01012d06: Unable to resolve constructor at 01012d06 (DecompileCallback)  
+WARN  Decompiling 01012c98, pcode error at 01012d00: Unable to resolve constructor at 01012d00 (DecompileCallback)  
+WARN  Decompiling 01013218, pcode error at 01013464: Unable to resolve constructor at 01013464 (DecompileCallback)  
+WARN  Decompiling 01013218, pcode error at 0101337c: Unable to resolve constructor at 0101337c (DecompileCallback)  
+WARN  Decompiling 01013218, pcode error at 010132ca: Unable to resolve constructor at 010132ca (DecompileCallback)  
+WARN  Decompiling 01013310, pcode error at 01013552: Failed to resolve varnode <thv_Qd1>, index=15 (DecompileCallback)  
+WARN  Decompiling 01013310, pcode error at 010134b8: Unable to resolve constructor at 010134b8 (DecompileCallback)  
+WARN  Decompiling 01013310, pcode error at 0101347c: Failed to resolve varnode <thv_Qn1>, index=13 (DecompileCallback)  
+WARN  Decompiling 01013310, pcode error at 01013464: Unable to resolve constructor at 01013464 (DecompileCallback)  
+WARN  Decompiling 01014bfc, pcode error at 01014dec: Unable to resolve constructor at 01014dec (DecompileCallback)  
+WARN  Decompiling 0101669a, pcode error at 010167f8: Unable to resolve constructor at 010167f8 (DecompileCallback)  
+WARN  Decompiling 01016f9e, pcode error at 01017130: Unable to resolve constructor at 01017130 (DecompileCallback)  
+WARN  Decompiling 01016f9e, pcode error at 0101712c: Unable to resolve constructor at 0101712c (DecompileCallback)  
+WARN  Decompiling 01017d4c, pcode error at 01017f7a: Unable to resolve constructor at 01017f7a (DecompileCallback)  
+WARN  Decompiling 01017d4c, pcode error at 01017f72: Unable to resolve constructor at 01017f72 (DecompileCallback)  
+WARN  Decompiling 0101a85c, pcode error at 0101aaa0: Unable to resolve constructor at 0101aaa0 (DecompileCallback)  
+WARN  Decompiling 0101a85c, pcode error at 0101aa88: Unable to resolve constructor at 0101aa88 (DecompileCallback)  
+WARN  Decompiling 0101a85c, pcode error at 0101aa82: Unable to resolve constructor at 0101aa82 (DecompileCallback)  
+WARN  Decompiling 0101ec06, pcode error at 0101ec4c: Failed to resolve varnode <thv_Qn0>, index=11 (DecompileCallback)  
+WARN  Decompiler: Codelabel switchD_0101ec3e_caseD_70 overlaps object: pbRam0101ed20 (DecompileProcess)  
+INFO  DumpDecomp.java> wrote 353 functions to /home/francesco/Documents/Code/epomaker/re/decomp/kb_app.bin.c (GhidraScript)  
+INFO  ANALYZING changes made by post scripts: file:///home/francesco/Documents/Code/epomaker/re/fw/v507/kb_app.bin (HeadlessAnalyzer)  
+INFO  REPORT: Post-analysis succeeded for file: file:///home/francesco/Documents/Code/epomaker/re/fw/v507/kb_app.bin (HeadlessAnalyzer)  
+INFO  /kb_app.bin: file created (francesco) (LocalFileSystem)  
+INFO  REPORT: Save succeeded for: /kb_app.bin (rt100:/kb_app.bin) (HeadlessAnalyzer)  
+INFO  REPORT: Import succeeded (HeadlessAnalyzer)  

@@ -1,0 +1,36 @@
+---
+description: Current state of the RT100 screen project and the approved next tasks, with how far a model may go on each.
+alwaysApply: true
+---
+
+# RT100 screen project — state and next tasks
+
+## State (working, verified on the device)
+- Screen runs custom firmware `re/custom/out/firmwareOledFile.bin` (I2C clock fix +
+  custom display mode). Do not rebuild/reflash it for host-side work.
+- `rt100screen.py run` rotates clock, system, now-playing and weather. A desktop
+  notification (app + summary only) replaces the page for 10 s. `--no-notify` disables that.
+- Weather reads `~/.config/rt100screen.json`. It is set to London (51.513, -0.092).
+  Change it only when the user asks: `rt100screen.py location CITY`.
+- Agent alerts: Cursor `stop` and Claude `Stop`/`Notification` write
+  `~/.local/state/rt100screen/agent.json`. The screen holds that page for 3 minutes.
+  The next prompt clears it. Do not remove those hooks unless the user asks.
+- Only one sender. A second copy exits. `rt100screen.py stop` asks the running one to
+  return the screen to the stock UI.
+- `rt100screen.py image` scales to 64px. `--full` allows larger and is slow.
+- `rt100.py` = vendor HID client, `screenproto.py` = packet encoder, `oled_flash.py` = flasher (forbidden, see safety rule).
+
+## Not done yet
+- **Pacing** is still the guess of 6 µs per pixel. Change `--us-per-pixel` only while the
+  user is watching a full-screen fill, and only lower it if the picture stays correct.
+
+Autostart is enabled (`systemctl --user enable` already done). Do not disable it unless the user asks.
+
+## Known open issues (report, don't fix blindly)
+- Screen may turn off after ~2 min (keyboard sleep command `0x3F`); not yet seen in custom mode.
+  If the user reports it, investigate and propose — any fix in firmware needs approval.
+- Orientation is verified for text; check images the right way up with the user.
+
+## Escalate to the user (stop and ask) when
+- A task seems to need a firmware change, a new vendor command, or flashing.
+- The device behaves unexpectedly, or a tool reports an error you don't understand.

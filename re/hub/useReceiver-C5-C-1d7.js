@@ -1,0 +1,1 @@
+import{q as e}from"./naive-ui-D5WoCXqT.js";import{t}from"./index-1nvgM05L.js";function n(){let{activeDevice:n}=t();return{receiver:e(()=>n.value?.protocol.getReceiverProtocol?.()??null),identity:e(()=>n.value?.id??``)}}export{n as t};

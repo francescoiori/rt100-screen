@@ -1,0 +1,41 @@
+---
+description: How to extend the laptop-side screen tool (rt100screen.py, screenproto.py) safely — pages, widgets, services.
+globs: rt100screen.py,screenproto.py,re/custom/emu_custom.py
+alwaysApply: false
+---
+
+# Laptop screen tool — where new features go
+
+This is the safe place to work: pages, weather, notifications, images,
+autostart, pacing. Use `.venv/bin/python`.
+
+## What the screen can draw (fixed by firmware — do not assume more)
+- 240x240 panel, RGB565 colours via `sp.rgb()` / `sp.hexcolor()`. x right, y down.
+- `fill`, `text` (8x16 ASCII font, chars 32..126 only, `scale` 1..8, always draws its
+  background), `image` (RGB565, must fit on screen), `mono` (1-bit bitmap).
+- No fonts other than the built-in one, no transparency, no scrolling, no reading back.
+- Bandwidth is low (~1 KB/s, about 60 ms per packet). Full-screen RGB images take
+  minutes: keep images small (icons <= 64x64) or use `mono`.
+
+## Widget and page conventions (`rt100screen.py`)
+- A page is `fn(now, data) -> dict[key, Widget]`; register it in `PAGES` with its data source.
+- `Screen` redraws only widgets whose value changed, so keep widget values stable
+  (round numbers, fixed-width `Text.chars`) to avoid sending every second.
+- Text is padded to `chars` so old text is overwritten; pass non-ASCII through `ascii_only`.
+- Keep the page dots at y=224 free; leave a 16 px margin at the sides.
+- Data sources must never raise or block more than ~1 s (use timeouts, return None on failure).
+- No new pip dependencies without asking; prefer stdlib, `psutil`, `busctl --json`.
+
+## Testing order
+1. `.venv/bin/python rt100screen.py <action> --dry-run` — inspect packets.
+2. If you changed `clock_page`/`system_page`/`media_page` signatures, update
+   `re/custom/emu_custom.py`, then run it and look at `re/custom/out/emu_*.png`.
+3. Only then send to the device (check `pgrep -af rt100screen` first) and ask the user
+   what the screen shows — you cannot see it.
+
+## Do not
+- Do not edit `Link._session` framing (0x31 count in bytes 1-2, checksum at byte 7,
+  no-op padding in `finally`) or remove the pacing sleeps.
+- Do not send packets outside `Link.send`.
+- Autostart (systemd user unit) must run `rt100screen.py run` only, restart on
+  failure with a delay of at least 5 s, and the user must approve enabling it.

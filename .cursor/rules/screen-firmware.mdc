@@ -1,0 +1,41 @@
+---
+description: Constraints for the custom screen firmware (re/custom) and reverse-engineering tools. Firmware changes are expert-only.
+globs: re/**
+alwaysApply: false
+---
+
+# Custom screen firmware (`re/custom/`)
+
+Default stance: **do not change the firmware.** Almost every feature (pages,
+weather, notifications, images, services) belongs in the laptop tool
+(`rt100screen.py`). Only touch firmware files if the user asks for a firmware
+change specifically, and even then never flash (see hardware-safety rule).
+
+## Do not edit
+- Any hard-coded address: `link.ld` origins/symbols, `hooks.S`, the `#define`s at the
+  top of `custom.c` (stock routine and RAM addresses), and the constants in `build.py`
+  (`FRAME_SITE*`, `LOOP_SITE`, `ZI_*`, `APP_*`, `BASE_SHA256`). These came from
+  disassembly of firmware v506; a wrong value bricks the screen.
+- The wire protocol (`PKT_*`, `OP_*` values, packet layout) without changing
+  `screenproto.py` in the same change and keeping old opcodes working.
+
+## Invariants `custom.c` must keep (if a change is approved)
+- `custom_frame_hook` runs in the timer interrupt: no drawing, no loops over pixels,
+  no waiting. It only copies the packet, handles `PKT_NOW`, and sets the reply.
+- Unknown serial commands must still set `UNHANDLED = 1` (stock behaviour).
+- Any loop that can take milliseconds calls `wdt_feed()` (watchdog reset otherwise).
+- No libc, no initialised globals (`.data` must stay empty), no floating point.
+- `QN` stays a power of two; state lives in the zero-initialised `st` struct so
+  custom mode never survives a reboot.
+- Code must end below `0x01020000`; `.bss` below `0x0002D000` (build asserts both).
+
+## Required checks after any change under `re/custom/`
+```bash
+cd re/custom
+../../.venv/bin/python build.py 2>&1 | rg -v "Forcing branch"
+../../.venv/bin/python emu_custom.py   # must print ALL CHECKS PASSED
+```
+Then show the user `out/emu_*.png` and `out/patch.txt`, and stop. Flashing is the
+user's decision, asked explicitly, every time.
+
+Never weaken or delete a check in `build.py` or `emu_custom.py` to make it pass.

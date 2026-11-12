@@ -1,0 +1,3 @@
+# Epomaker RT100 (ROYUAN 3151): 4010 = wired, 4011 = 2.4 GHz dongle
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="3151", ATTRS{idProduct}=="4010|4011", GROUP="plugdev", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="3151", ATTR{idProduct}=="4010|4011", GROUP="plugdev", MODE="0660", TAG+="uaccess"

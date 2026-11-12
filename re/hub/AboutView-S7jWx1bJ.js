@@ -1,0 +1,1 @@
+import{J as e,Z as t,pt as n}from"./naive-ui-D5WoCXqT.js";import{_n as r}from"./index-1nvgM05L.js";var i={},a={class:`about`};function o(r,i){return n(),t(`div`,a,[...i[0]||=[e(`h1`,null,`This is an about page`,-1)]])}var s=r(i,[[`render`,o]]);export{s as default};

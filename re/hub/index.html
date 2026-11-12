@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<!-- 首帧即挂 .dark。深色是**默认皮肤** —— 没自己选过的用户一律深色，不跟随系统。
+     下面 <head> 里的内联脚本只在用户明确选过浅色时把它摘掉。
+     两者要一起看：这里给默认值，脚本负责用户的选择。 -->
+<html lang="" class="dark">
+  <head>
+    <!--
+      ⚠️ 首帧主题 —— 必须**内联且尽早**，晚一点就会看见闪烁。
+
+      <html> 上写死了 class="dark"。这段脚本在首帧渲染前按本地偏好把它摘掉，
+      让选过浅色的用户也不闪。
+
+      ⚠️ **读不到偏好 = 深色**，不跟随系统。深色是这个应用一直以来的样子，
+      浅色是 2026-09-07 才放出来的新皮肤、还没走查完所有页面；
+      让一个从没选过的用户因为系统是浅色就直接落进新皮肤，风险不对等。
+      只有明确存了 'system' 才跟随系统（目前 UI 只写 light/dark，留着是为了兼容）。
+
+      读的是 theme store 用的同一个键（stores/theme.ts THEME_STORAGE_KEY），
+      两边的默认值**必须一致**，不然首帧和 store 初始化会各挂各的，闪一下。
+      值可能带引号（不同存储实现），所以两种都认。
+      整段 try 包住：禁了存储的浏览器上抛异常也只是回退到深色，不能挡住启动。
+    -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('keyboard-pro-theme')
+          var v = raw ? raw.replace(/^"|"$/g, '') : null
+          var dark =
+            v === 'light' ? false
+            : v === 'system' ? window.matchMedia('(prefers-color-scheme: dark)').matches
+            : true
+          document.documentElement.classList.toggle('dark', dark)
+        } catch (e) {}
+      })()
+    </script>
+    <meta charset="UTF-8">
+    <link rel="icon" href="/favicon.svg">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPOMAKER HUB</title>
+
+    <!--
+      ⚠️⚠️ 启动前守卫 —— 必须是**内联的经典脚本**，不能挪进 src/。
+
+      线上事故：用户浏览器禁止了本站点的数据存储，控制台里是
+        Uncaught SecurityError: Failed to read the 'localStorage' property from 'Window'
+      分别来自 pinia.js 和依赖 chunk —— **第三方库**直接读 window.localStorage 抛的。
+      我们改不了库的代码，只能把那个属性本身换成内存实现。
+
+      为什么必须内联在这里、而不是 src/ 里的第一个 import：
+        1. ESM 的 import 先于导入方的函数体求值。第一版把错误监听写在 main.ts 的
+           bootstrap() 里，结果 pinia.js 在 import 阶段就抛了 —— 那时监听还没装，
+           照样白屏、且兜底页不出现。
+        2. 万一整个模块包求值失败，src/ 里的任何代码都不会执行。最后一道防线
+           只能是不依赖模块系统的内联脚本。
+
+      这段刻意写成 ES5、无依赖、全程 try/catch —— 它是最后一道防线，自己绝不能抛。
+      可测试的等价实现在 src/utils/install-storage-shim.ts（那份是给单测用的）。
+    -->
+    <script>
+      (function () {
+        'use strict'
+
+        // ---- 1. 存储不可用 → 换成内存实现（本次会话内正常，刷新回默认值）----
+        function memoryStorage() {
+          var map = {}
+          return {
+            get length() { return Object.keys(map).length },
+            key: function (i) { var k = Object.keys(map); return i in k ? k[i] : null },
+            getItem: function (k) { return Object.prototype.hasOwnProperty.call(map, String(k)) ? map[String(k)] : null },
+            setItem: function (k, v) { map[String(k)] = String(v) },
+            removeItem: function (k) { delete map[String(k)] },
+            clear: function () { map = {} }
+          }
+        }
+
+        // ⚠️ 不能只看对象在不在：权限被拒时**读属性本身**就抛；
+        //    隐私模式下对象存在但一 setItem 就抛（配额为 0）。两步都过才算可用。
+        function usable(kind) {
+          try {
+            var s = window[kind]
+            if (!s) return false
+            s.setItem('__probe__', '1')
+            s.removeItem('__probe__')
+            return true
+          } catch (e) { return false }
+        }
+
+        var shimmed = []
+        var kinds = ['localStorage', 'sessionStorage']
+        for (var i = 0; i < kinds.length; i++) {
+          if (usable(kinds[i])) continue
+          try {
+            Object.defineProperty(window, kinds[i], {
+              value: memoryStorage(), configurable: true, writable: true
+            })
+            shimmed.push(kinds[i])
+          } catch (e) { /* 极端沙箱连 defineProperty 都不让，只能认了 */ }
+        }
+        window.__storageShimmed = shimmed
+        if (shimmed.length && window.console) {
+          console.warn('[storage] 本站点的数据存储被禁止（' + shimmed.join(', ') +
+            '），已切换为内存模式：本次会话内一切正常，刷新后设置回到默认值。')
+        }
+
+        // ---- 2. 启动期错误捕获 ----
+        // 存进全局，等应用起来后由 fatal-error-screen 接手；应用起不来则由下面的兜底显示
+        var boot = []
+        window.__bootErrors = boot
+        function record(e) { try { boot.push(e) } catch (x) { /* noop */ } }
+        window.addEventListener('error', function (e) { record(e.error || e.message) })
+        window.addEventListener('unhandledrejection', function (e) { record(e.reason) })
+
+        // ---- 3. 最后一道防线：应用始终没挂起来就自己画个错误页 ----
+        function lastResort() {
+          try {
+            var app = document.getElementById('app')
+            if (app && app.childElementCount > 0) return       // 已经渲染出来了
+            if (document.getElementById('epomaker-fatal-error')) return // 正式兜底页已接管
+            if (!boot.length) return                            // 没报错，可能只是加载慢
+
+            var zh = (navigator.language || '').toLowerCase().indexOf('zh') === 0
+            var msg = String(boot[0] && (boot[0].message || boot[0]) || '')
+            var hint = /SecurityError|localStorage|denied/i.test(msg)
+              ? (zh ? '浏览器禁止了本站点的数据存储。请在浏览器的「站点设置」中允许本站点存储数据（或退出无痕模式）后重试。'
+                    : 'Your browser is blocking site data. Allow site data in your browser settings (or leave private mode) and try again.')
+              : (zh ? '应用初始化失败。请刷新页面重试；若反复出现，请把下方错误详情发给客服。'
+                    : 'The app failed to start. Refresh the page; if it persists, send the details below to support.')
+
+            var detail = boot.map(function (e) {
+              return e && e.stack ? e.stack : String(e && e.message || e)
+            }).join('\n\n---\n')
+
+            var box = document.createElement('div')
+            box.id = 'epomaker-fatal-error'
+            box.setAttribute('role', 'alert')
+            box.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;' +
+              'align-items:center;justify-content:center;padding:24px;box-sizing:border-box;' +
+              'background:#15171c;color:#e8e8e8;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;' +
+              'font-size:14px;line-height:1.6'
+            box.innerHTML =
+              '<div style="max-width:680px;width:100%">' +
+                '<div style="font-size:18px;margin-bottom:12px"></div>' +
+                '<div style="margin-bottom:16px"></div>' +
+                '<div style="margin-bottom:16px"><button style="padding:8px 16px;border-radius:6px;' +
+                  'border:1px solid #4a4f58;background:#242830;color:inherit;cursor:pointer;font-size:14px"></button></div>' +
+                '<pre style="white-space:pre-wrap;word-break:break-word;background:#0f1115;border:1px solid #2c313a;' +
+                  'border-radius:6px;padding:12px;max-height:40vh;overflow:auto;font-size:12px;color:#b9c0cc;margin:0"></pre>' +
+              '</div>'
+            // 用 textContent 填内容，避免把错误信息当 HTML 解析
+            var wrap = box.firstChild
+            wrap.childNodes[0].textContent = zh ? '⚠️ 应用无法启动' : '⚠️ The app could not start'
+            wrap.childNodes[1].textContent = hint
+            var btn = wrap.childNodes[2].firstChild
+            btn.textContent = zh ? '刷新页面' : 'Reload'
+            btn.onclick = function () { location.reload() }
+            wrap.childNodes[3].textContent = detail
+            document.body.appendChild(box)
+          } catch (e) { /* 兜底的兜底：什么都不做，至少别再抛一层盖掉原始错误 */ }
+        }
+        // 给模块包留出加载时间；慢网络下也不至于误报（有错误才会显示）
+        setTimeout(lastResort, 5000)
+      })()
+    </script>
+    <script type="module" crossorigin src="/assets/index-1nvgM05L.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/naive-ui-D5WoCXqT.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-DYSGPwkV.js">
+    <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-BM3B8y3U.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-BfYrvy5B.css">
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- Netlify Forms 静态检测表单（隐藏，仅供 Netlify 构建时识别） -->
+    <form hidden method='post' name='feedback'><input type='hidden' name='form-name' value='feedback' />
+      <input name="bot-field" />
+      <input name="title" />
+      <input name="email" />
+      <input name="deviceModel" />
+      <input type="hidden" name="vendorId" />
+      <input type="hidden" name="productId" />
+      <input type="hidden" name="productNum" />
+      <textarea name="message"></textarea>
+    </form>
+  </body>
+</html>

@@ -1,0 +1,37 @@
+---
+description: Hard safety limits for the Epomaker RT100 keyboard and its screen. Read before touching any device or firmware.
+alwaysApply: true
+---
+
+# RT100 hardware safety (non-negotiable)
+
+The screen has no JTAG and its bootloader has no fallback: a firmware that
+crashes at boot bricks it permanently. The keyboard and screen are the user's
+only units.
+
+## Never, without the user explicitly saying yes in this conversation
+- Run `oled_flash.py` (any arguments other than `--dry-run`) or anything that flashes.
+- Send vendor command `0x30` (enter bootloader), `0xB1`, or raw `rt100.send(...)` packets.
+- Send any vendor command not produced by `rt100screen.py` / `screenproto.py`.
+- Use `rt100screen.py --dongle` (passthrough over 2.4 GHz is untested).
+- Change keyboard settings, keymaps or keyboard firmware.
+
+## Allowed on the device without asking
+- `rt100screen.py run|text|image|settime|stock` (add `--dry-run` first when you changed encoding code).
+- Read-only queries via `rt100.query`: `0x80` (keyboard version), `0x8F` (dev id), `0xAD` (screen version).
+
+## Rules for talking to the device
+- Only one sender at a time. Before sending, check nothing else is running:
+  `pgrep -af rt100screen` — two senders interleave passthrough sessions and corrupt them.
+- A passthrough session (`0x31 <count>` + exactly `count` packets) must always be completed.
+  `Link._session` pads with no-op packets in `finally`; never bypass `Link`.
+- Never `kill -9` a sender mid-session. If the keyboard stops responding to the
+  tools, tell the user to unplug and replug the keyboard; do not improvise commands.
+- If the screen shows something unexpected (dark, garbled, rotated), stop sending,
+  run `rt100screen.py stock`, and report to the user. Do not "try things".
+
+## Files you must not modify
+- `re/fw/**` (original firmware dumps), `re/decomp/**`, `re/patch/**` (flashed I2C fix).
+- `re/custom/out/firmwareOledFile.bin` is what is flashed now; only `re/custom/build.py` writes it.
+
+When in doubt: stop and ask the user. A slower answer is fine; a bricked screen is not.

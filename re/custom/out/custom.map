@@ -1,0 +1,97 @@
+Archive member included to satisfy reference by file (symbol)
+
+/home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uqi.o)
+                              /tmp/cct80Qgi.o (__gnu_thumb1_case_uqi)
+
+Discarded input sections
+
+ .text          0x00000000        0x0 /tmp/ccc5YUIk.o
+ .data          0x00000000        0x0 /tmp/ccc5YUIk.o
+ .bss           0x00000000        0x0 /tmp/ccc5YUIk.o
+ .ARM.attributes
+                0x00000000       0x21 /tmp/ccc5YUIk.o
+ .text          0x00000000        0x0 /tmp/cct80Qgi.o
+ .data          0x00000000        0x0 /tmp/cct80Qgi.o
+ .comment       0x00000000       0x3a /tmp/cct80Qgi.o
+ .ARM.attributes
+                0x00000000       0x2c /tmp/cct80Qgi.o
+ .data          0x00000000        0x0 /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uqi.o)
+ .bss           0x00000000        0x0 /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uqi.o)
+ .ARM.attributes
+                0x00000000       0x1e /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uqi.o)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+FLASH            0x01017eb8         0x00008148         xr
+RAM              0x0002bbb0         0x00001450         rw
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD /tmp/ccc5YUIk.o
+LOAD /tmp/cct80Qgi.o
+LOAD /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a
+                0x0101195c                        stock_draw0 = 0x101195c
+                0x01014314                        stock_idle = 0x1014314
+                0x010104d4                        loop_resume = 0x10104d4
+
+.text           0x01017eb8      0xabc
+ *(.text.hooks)
+ .text.hooks    0x01017eb8       0x20 /tmp/ccc5YUIk.o
+                0x01017eb8                loop_hook
+ *(.text.custom_frame_hook)
+ .text.custom_frame_hook
+                0x01017ed8      0x13c /tmp/cct80Qgi.o
+                0x01017ed8                custom_frame_hook
+ *(.text*)
+ .text.push     0x01018014       0x14 /tmp/cct80Qgi.o
+ .text.window   0x01018028       0x40 /tmp/cct80Qgi.o
+ .text.fill     0x01018068       0x38 /tmp/cct80Qgi.o
+ .text.custom_tick
+                0x010180a0      0x2d0 /tmp/cct80Qgi.o
+                0x010180a0                custom_tick
+ .text          0x01018370       0x14 /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uqi.o)
+                0x01018370                __gnu_thumb1_case_uqi
+ *(.rodata*)
+ .rodata        0x01018384      0x5f0 /tmp/cct80Qgi.o
+
+.glue_7         0x01018974        0x0
+ .glue_7        0x01018974        0x0 linker stubs
+
+.glue_7t        0x01018974        0x0
+ .glue_7t       0x01018974        0x0 linker stubs
+
+.vfp11_veneer   0x01018974        0x0
+ .vfp11_veneer  0x01018974        0x0 linker stubs
+
+.v4_bx          0x01018974        0x0
+ .v4_bx         0x01018974        0x0 linker stubs
+
+.iplt           0x01018974        0x0
+ .iplt          0x01018974        0x0 /tmp/ccc5YUIk.o
+
+.rel.dyn        0x01018974        0x0
+ .rel.iplt      0x01018974        0x0 /tmp/ccc5YUIk.o
+
+.data
+ *(.data*)
+
+.igot.plt       0x0002bbb0        0x0 load address 0x01018974
+ .igot.plt      0x0002bbb0        0x0 /tmp/ccc5YUIk.o
+
+.bss            0x0002bbb0      0x810 load address 0x01018974
+                0x0002bbb0                        __bss_start = .
+ *(.bss*)
+ .bss           0x0002bbb0      0x810 /tmp/cct80Qgi.o
+ *(COMMON)
+                0x0002c3c0                        . = ALIGN (0x4)
+                0x0002c3c0                        __bss_end = .
+
+/DISCARD/
+ *(.ARM.exidx*)
+ *(.ARM.attributes)
+ *(.comment)
+                0x00000001                        ASSERT ((SIZEOF (.data) == 0x0), initialised data is not supported: nothing copies it to RAM)
+OUTPUT(/home/francesco/Documents/Code/epomaker/re/custom/out/custom.elf elf32-littlearm)
+LOAD linker stubs
