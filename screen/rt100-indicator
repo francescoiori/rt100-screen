@@ -1,0 +1,112 @@
+#!/usr/bin/python3
+"""Top-bar menu for the RT100 screen. Talks to the local control page only."""
+import json
+import subprocess
+import urllib.request
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("AyatanaAppIndicator3", "0.1")
+from gi.repository import AyatanaAppIndicator3, GLib, Gtk
+
+URL = "http://127.0.0.1:8765"
+ICON = "/home/francesco/Documents/Code/epomaker/screen/rt100-screen.png"
+PANEL = "/home/francesco/Documents/Code/epomaker/screen/rt100-panel"
+PAGES = (("clock", "Clock"), ("system", "System"), ("media", "Now playing"),
+         ("weather", "Weather"), ("agenda", "Next up"), ("volume", "Volume"))
+
+
+def post(cmd, arg=""):
+    body = json.dumps({"cmd": cmd, "arg": arg}).encode()
+    req = urllib.request.Request(URL + "/command", data=body, headers={"Content-Type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=1).read()
+    except OSError:
+        return
+
+
+def fetch_status():
+    try:
+        with urllib.request.urlopen(URL + "/status", timeout=0.4) as reply:
+            data = json.load(reply)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+class Menu:
+    def __init__(self):
+        self.updating = False
+        indicator = AyatanaAppIndicator3.Indicator.new(
+            "rt100-screen", ICON, AyatanaAppIndicator3.IndicatorCategory.APPLICATION_STATUS)
+        self.indicator = indicator
+        indicator.set_icon_full(ICON, "RT100")
+        indicator.set_status(AyatanaAppIndicator3.IndicatorStatus.ACTIVE)
+        indicator.set_title("RT100")
+        menu = Gtk.Menu()
+        self.status = Gtk.MenuItem(label="Connecting")
+        self.status.set_sensitive(False)
+        menu.append(self.status)
+        menu.append(Gtk.SeparatorMenuItem())
+        self.pages = {}
+        for key, label in PAGES:
+            item = Gtk.MenuItem(label=label)
+            item.connect("activate", lambda _item, name=key: post("page", name))
+            menu.append(item)
+            self.pages[key] = item
+        menu.append(Gtk.SeparatorMenuItem())
+        self.pause = Gtk.MenuItem(label="Pause")
+        self.rotate = Gtk.MenuItem(label="Rotate")
+        self.pause.connect("activate", lambda *_: post("pause"))
+        self.rotate.connect("activate", lambda *_: post("resume"))
+        menu.append(self.pause)
+        menu.append(self.rotate)
+        self.quiet = Gtk.CheckMenuItem(label="Quiet notifications")
+        self.quiet.connect("toggled", self._quiet)
+        menu.append(self.quiet)
+        menu.append(Gtk.SeparatorMenuItem())
+        stock = Gtk.MenuItem(label="Stock clock")
+        stock.connect("activate", lambda *_: post("stock"))
+        open_panel = Gtk.MenuItem(label="Open")
+        open_panel.connect("activate", lambda *_: subprocess.Popen([PANEL], start_new_session=True))
+        github = Gtk.MenuItem(label="GitHub")
+        github.connect("activate", lambda *_: subprocess.Popen(
+            ["xdg-open", "https://github.com/francescoiori/epomaker"], start_new_session=True))
+        quit_item = Gtk.MenuItem(label="Quit")
+        quit_item.connect("activate", lambda *_: Gtk.main_quit())
+        menu.append(stock)
+        menu.append(open_panel)
+        menu.append(github)
+        menu.append(quit_item)
+        menu.show_all()
+        indicator.set_menu(menu)
+        GLib.timeout_add_seconds(1, self.refresh)
+        self.refresh()
+
+    def _quiet(self, item):
+        if not self.updating:
+            post("quiet", "on" if item.get_active() else "off")
+
+    def refresh(self):
+        status = fetch_status()
+        self.updating = True
+        if status is None:
+            self.status.set_label("Screen service is not running")
+        elif status.get("link") == "down" or status.get("shown") == "unplugged":
+            self.status.set_label("Keyboard unplugged")
+        else:
+            detail = status.get("detail") or status.get("shown") or "RT100"
+            self.status.set_label(str(detail)[:48])
+        held = status.get("page") if status and status.get("mode") == "hold" else None
+        for key, item in self.pages.items():
+            item.set_label(("● " if key == held else "") + dict(PAGES)[key])
+        if status is not None:
+            self.quiet.set_active(bool(status.get("quiet")))
+        self.updating = False
+        return True
+
+
+if __name__ == "__main__":
+    Menu()
+    Gtk.main()

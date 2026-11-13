@@ -1,0 +1,6 @@
+#!/bin/sh
+# Ask for one line and hold it on the keyboard screen. Super+Alt+R runs this.
+text=$(zenity --entry --title="RT100" --text="A line for the screen" --width=360) || exit 0
+[ -n "$text" ] || exit 0
+body=$(python3 -c 'import json,sys; print(json.dumps({"cmd":"text","arg":sys.argv[1]}))' "$text")
+curl -sf -m 2 -X POST http://127.0.0.1:8765/command -H 'Content-Type: application/json' -d "$body" >/dev/null

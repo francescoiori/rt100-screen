@@ -1,0 +1,12 @@
+[Unit]
+Description=RT100 top-bar menu
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/francesco/Documents/Code/epomaker/screen/rt100-indicator
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

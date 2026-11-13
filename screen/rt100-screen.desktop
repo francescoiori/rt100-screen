@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=RT100
+Comment=Control the keyboard screen
+Exec=/home/francesco/Documents/Code/epomaker/screen/rt100-panel
+Icon=/home/francesco/Documents/Code/epomaker/screen/rt100-screen.png
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupWMClass=RT100Screen

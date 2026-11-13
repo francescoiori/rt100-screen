@@ -5,6 +5,9 @@ usage:
   rt100screen.py settime | stock | stop | text "hello" | image picture.png
   rt100screen.py location CITY | location --lat LAT --lon LON --name CITY
   rt100screen.py agent --source Cursor          # used by the Cursor and Claude hooks
+While it runs, a control page is at http://127.0.0.1:8765
+If the wired keyboard disappears, the last frame stays and the program waits.
+It does not reboot the screen back to the stock UI.
 Add --dry-run to print packets instead of sending them. Only one sender may run.
 
 Packets reach the screen through the keyboard's OLED-update passthrough:
@@ -17,6 +20,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import math
 import os
 import shutil
@@ -32,6 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import screenproto as sp
+import teamscal
 
 PASSTHROUGH = 0x31
 NOOP = bytes([sp.PKT_DRAW]).ljust(sp.PACKET, b"\0")
@@ -46,19 +51,50 @@ GOOD, WARN, BAD = sp.hexcolor("7ee787"), sp.hexcolor("ffb454"), sp.hexcolor("ff6
 
 # ---- link -------------------------------------------------------------------
 
+class LinkDown(Exception):
+    """The keyboard went away mid-send. A custom screen keeps the frame it already has."""
+
+
 class Link:
     def __init__(self, dry_run: bool = False, dongle: bool = False,
-                 us_per_pixel: float = 6.0, packet_delay: float = 0.004) -> None:
+                 us_per_pixel: float = 6.0, packet_delay: float = 0.004,
+                 require: bool = True) -> None:
         self.dry_run, self.us_per_pixel, self.packet_delay = dry_run, us_per_pixel, packet_delay
+        self.dongle = dongle
         self.path = None
+        self.alive = bool(dry_run)
+        self.rt100 = None
         if not dry_run:
             import rt100
             self.rt100 = rt100
-            self.path = rt100.find_vendor_hidraw((0x4011,) if dongle else (0x4010,))
+            self.reopen(require)
+
+    def reopen(self, require: bool = False) -> bool:
+        """Look for the wired keyboard again. The 2.4 GHz dongle stays opt-in."""
+        if self.dry_run:
+            self.alive = True
+            return True
+        try:
+            self.path = self.rt100.find_vendor_hidraw((0x4011,) if self.dongle else (0x4010,))
+        except FileNotFoundError:
+            self.alive = False
+            self.path = None
+            if require:
+                raise
+            return False
+        self.alive = True
+        return True
 
     def send(self, packets: list[tuple[bytes, int]]) -> None:
         for start in range(0, len(packets), 0xFFFF):
             self._session(packets[start:start + 0xFFFF])
+
+    def _write(self, packet: bytes) -> None:
+        try:
+            self.rt100.send(self.path, packet)
+        except OSError:
+            self.alive = False
+            raise LinkDown
 
     def _session(self, packets: list[tuple[bytes, int]]) -> None:
         if not packets:
@@ -72,17 +108,19 @@ class Link:
         start = bytearray(sp.PACKET)
         start[0:3] = bytes([PASSTHROUGH, n & 0xFF, n >> 8])
         start[7] = (0xFF - sum(start[:7])) & 0xFF
-        self.rt100.send(self.path, bytes(start))
+        self._write(bytes(start))
         time.sleep(0.01)
         sent = 0
         try:
             for p, px in packets:
-                self.rt100.send(self.path, p)
+                self._write(p)
                 sent += 1
                 time.sleep(self.packet_delay + px * self.us_per_pixel / 1e6)
         finally:
             for _ in range(n - sent):
-                self.rt100.send(self.path, NOOP)
+                if not self.alive:
+                    break
+                self._write(NOOP)
                 time.sleep(self.packet_delay)
 
 
@@ -192,7 +230,12 @@ def system_stats() -> dict:
             temp = entry.current
     if temp is None and temps:
         temp = max(e.current for es in temps.values() for e in es)
-    return {"cpu": psutil.cpu_percent(interval=None), "ram": psutil.virtual_memory().percent, "temp": temp}
+    battery = None
+    bat = psutil.sensors_battery()
+    if bat is not None:
+        battery = {"percent": round(bat.percent), "plugged": bool(bat.power_plugged)}
+    return {"cpu": psutil.cpu_percent(interval=None), "ram": psutil.virtual_memory().percent,
+            "temp": temp, "battery": battery}
 
 
 def system_page(_now: datetime, s: dict) -> dict:
@@ -202,10 +245,14 @@ def system_page(_now: datetime, s: dict) -> dict:
     if s.get("temp") is not None:
         rows.append(("temp", "TEMP", (s["temp"] - 30) / 70, f"{s['temp']:.0f}C"))
     for i, (key, label, frac, value) in enumerate(rows):
-        y = 50 + i * 56
+        y = 44 + i * 44
         w[key + "_l"] = Text(16, y, 4, label, MUTED)
         w[key + "_v"] = Text(144, y, 5, value, FG, 2, "right")
-        w[key + "_b"] = Bar(16, y + 34, 208, 10, frac, level(frac))
+        w[key + "_b"] = Bar(16, y + 22, 208, 8, frac, level(frac))
+    bat = s.get("battery")
+    if bat:
+        state = "PLUGGED" if bat["plugged"] else "BATTERY"
+        w["bat"] = Text(16, 196, 13, f"{bat['percent']}%  {state}", ACCENT if bat["plugged"] else WARN, 2, "center")
     return w
 
 
@@ -262,6 +309,42 @@ def wrap(s: str, width: int, lines: int) -> list[str]:
         out = out[:lines]
         out[-1] = out[-1][:width - 2] + ".."
     return out + [""] * (lines - len(out))
+
+
+def _wpctl(target: str) -> dict | None:
+    try:
+        out = subprocess.run(["wpctl", "get-volume", target], capture_output=True, text=True, timeout=1)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    line = (out.stdout or "").strip()
+    parts = line.split()
+    if len(parts) < 2 or parts[0] != "Volume:":
+        return None
+    try:
+        level = float(parts[1])
+    except ValueError:
+        return None
+    return {"level": max(0.0, level), "muted": "MUTED" in line}
+
+
+def volume_info() -> dict | None:
+    sink = _wpctl("@DEFAULT_AUDIO_SINK@")
+    if sink is None:
+        return None
+    mic = _wpctl("@DEFAULT_AUDIO_SOURCE@")
+    return {"level": sink["level"], "muted": sink["muted"], "mic_muted": bool(mic and mic["muted"])}
+
+
+def volume_page(_now: datetime, v: dict) -> dict:
+    muted = v["muted"]
+    label = "MUTED" if muted else f"{round(min(v['level'], 1) * 100)}%"
+    return {
+        "title": title("volume"),
+        "level": Text(centered(5, 4), 72, 5, label, MUTED if muted else FG, 4, "center"),
+        "bar": Bar(20, 156, 200, 12, 0 if muted else min(1.0, v["level"])),
+        "mic": Text(16, 188, 13, "MIC MUTED" if v["mic_muted"] else "MIC ON",
+                    BAD if v["mic_muted"] else MUTED, 2, "center"),
+    }
 
 
 def media_page(_now: datetime, m: dict) -> dict:
@@ -417,6 +500,17 @@ def load_config() -> dict:
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def save_config(updates: dict) -> None:
+    cfg = load_config()
+    cfg.update(updates)
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(cfg, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, CONFIG_PATH)
 
 
 def geocode(name: str) -> list[dict]:
@@ -576,6 +670,37 @@ def _short(text: str) -> str:
     return text
 
 
+def _window_label(source: str, folder: str) -> str:
+    """The title-bar name of the Cursor or Claude window for this project."""
+    folder = folder.strip()
+    if not folder:
+        return ""
+    try:
+        env = os.environ.copy()
+        env.setdefault("DISPLAY", ":1")
+        tree = subprocess.check_output(
+            ["xwininfo", "-root", "-tree"], env=env, text=True, timeout=2, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return folder
+    app = "cursor" if source.lower() == "cursor" else "claude"
+    folder_l = folder.lower()
+    for line in tree.splitlines():
+        start = line.find('"')
+        end = line.find('"', start + 1)
+        if start < 0 or end < 0:
+            continue
+        title = line[start + 1:end]
+        parts = [part.strip() for part in title.split(" - ") if part.strip()]
+        if not parts or app not in parts[-1].lower():
+            continue
+        if not any(folder_l in part.lower() for part in parts):
+            continue
+        for part in parts[:-1]:
+            if folder_l in part.lower():
+                return part[:48]
+    return folder
+
+
 def publish_agent(source: str, clear: bool = False, state: str = "", summary: str = "") -> None:
     """Record an agent event for the screen. Never raises: hooks must fail open."""
     try:
@@ -601,11 +726,14 @@ def publish_agent(source: str, clear: bool = False, state: str = "", summary: st
             else:
                 state = "waiting"
         if not summary:
-            summary = _short(payload.get("message") or payload.get("title") or "") or _project_name(payload)
+            summary = _short(payload.get("message") or payload.get("title") or "")
+        folder = _project_name(payload)
+        where = _window_label(source, folder)
         os.makedirs(os.path.dirname(AGENT_PATH), exist_ok=True)
         tmp = AGENT_PATH + ".tmp"
         with open(tmp, "w") as f:
-            json.dump({"source": source, "state": state, "summary": summary, "at": time.time()}, f)
+            json.dump({"source": source, "state": state, "summary": summary,
+                       "where": where, "at": time.time()}, f)
         os.replace(tmp, AGENT_PATH)
         if state in AGENT_LABEL:
             subprocess.run(
@@ -634,15 +762,31 @@ def agent_status() -> dict | None:
         return None
 
 
-def agent_page(_now: datetime, a: dict) -> dict:
+def agent_page(now: datetime, a: dict) -> dict:
     state = a["state"] if a.get("state") in AGENT_LABEL else "waiting"
+    label = AGENT_LABEL[state]
+    color = BAD if state in ("needs-you", "error") else WARN if state == "waiting" else MUTED
+    flash = state in ("waiting", "needs-you", "error") and int(now.timestamp() * 2) % 2 == 0
+    ink, paper = (BG, color) if flash else (color, BG)
+    owner = ascii_only(str(a.get("source") or "AGENT")).upper()[:8] or "AGENT"
+    where = str(a.get("where") or "").replace("-", " ").replace("_", " ")
+    summary = str(a.get("summary") or "")
+    if summary.lower() == str(a.get("where") or "").lower():
+        summary = ""
     w = {
-        "title": title("agent"),
-        "who": Text(16, 52, 13, str(a.get("source") or ""), ACCENT, 2, "center"),
-        "state": Text(12, 96, 9, AGENT_LABEL[state], AGENT_FG[state], 3, "center"),
+        "who": Text(centered(len(owner), 3), 8, len(owner), owner, ACCENT, 3, "center"),
+        "band": Rect(0, 62, sp.W, 76, paper),
+        "state": Text(centered(9, 3), 76, 9, label, ink, 3, "center", paper),
+        "win": Text(centered(6, 1), 148, 6, "WINDOW", MUTED, 1, "center"),
     }
-    for i, line in enumerate(wrap(str(a.get("summary") or ""), 13, 2)):
-        w[f"s{i}"] = Text(16, 168 + i * 32, 13, line, FG)
+    shown = ascii_only(where).strip().upper()
+    if shown and len(shown) <= 8 and " " not in shown:
+        w["w0"] = Text(centered(len(shown), 3), 168, len(shown), shown, FG, 3, "center")
+    else:
+        for i, line in enumerate(wrap(shown or owner, 13, 2)):
+            w[f"w{i}"] = Text(16, 166 + i * 32, 13, line, FG, 2, "center")
+    if summary and "w1" not in w:
+        w["why"] = Text(8, 216, 26, summary, MUTED, 1, "center")
     return w
 
 
@@ -653,10 +797,100 @@ def notify_page(_now: datetime, n: dict) -> dict:
     return w
 
 
+def _agenda_loop() -> None:
+    while not _stop.is_set():
+        try:
+            teamscal.poll()
+        except Exception:
+            pass
+        _stop.wait(5)
+
+
+def agenda_info() -> dict | None:
+    event = teamscal.next_event()
+    if event:
+        return event
+    info = teamscal.signin()
+    if info["signed_in"]:
+        return None
+    return {"when": "TEAMS", "title": "Sign in on the laptop"}
+
+
+def agenda_page(_now: datetime, a: dict) -> dict:
+    w = {"title": title("next"), "when": Text(16, 56, 13, a["when"], ACCENT, 2, "center")}
+    for i, line in enumerate(wrap(a["title"], 13, 3)):
+        w[f"t{i}"] = Text(16, 108 + i * 36, 13, line, FG)
+    return w
+
+
+def agenda_empty() -> dict:
+    return {"title": title("next"), "none": Text(16, 104, 13, "NOTHING NEXT", MUTED, 2, "center")}
+
+
+def timer_page(_now: datetime, t: dict) -> dict:
+    if t["done"]:
+        return {"title": title("timer"), "done": Text(centered(4, 4), 88, 4, "DONE", GOOD, 4, "center")}
+    text = f"{t['left'] // 60:02d}:{t['left'] % 60:02d}"
+    return {"title": title("timer"), "left": Text(centered(5, 4), 80, 5, text, FG, 4, "center")}
+
+
 PAGES = {"clock": (clock_page, lambda: None),
          "system": (system_page, system_stats),
          "media": (media_page, media_info),
-         "weather": (weather_page, weather_info)}
+         "weather": (weather_page, weather_info),
+         "agenda": (agenda_page, agenda_info),
+         "volume": (volume_page, volume_info)}
+PAGE_LABEL = {"clock": "Clock", "system": "System", "media": "Now playing", "weather": "Weather",
+              "agenda": "Next up", "volume": "Volume", "timer": "Timer",
+              "notify": "Notification", "agent": "Agent", "text": "Your text", "image": "Image"}
+DEFAULT_PAGES = ["clock", "system", "media", "weather", "agenda", "volume"]
+
+
+def rotation_prefs() -> tuple[list[str], float, bool]:
+    cfg = load_config()
+    pages = [p for p in (cfg.get("pages") or []) if p in PAGES]
+    if not pages:
+        pages = list(DEFAULT_PAGES)
+    try:
+        seconds = float(cfg.get("seconds", 10))
+    except (TypeError, ValueError):
+        seconds = 10.0
+    return pages, min(60.0, max(3.0, seconds)), bool(cfg.get("quiet"))
+
+
+def caption(shown: str, data=None, text: str = "") -> str:
+    if shown == "clock":
+        return datetime.now().strftime("%H:%M")
+    if shown == "system" and isinstance(data, dict):
+        extra = f" {data['temp']:.0f}C" if data.get("temp") is not None else ""
+        bat = data.get("battery")
+        charge = f" {bat['percent']}%" if bat else ""
+        return f"CPU {data['cpu']:.0f}%{extra}{charge}"
+    if shown == "media" and isinstance(data, dict):
+        return (data.get("title") or "Nothing playing")[:42]
+    if shown == "weather" and isinstance(data, dict):
+        return f"{data['temp']}C {data['label']}"
+    if shown == "agenda" and isinstance(data, dict):
+        return (data.get("title") or "Nothing next")[:42]
+    if shown == "volume" and isinstance(data, dict):
+        mic = " mic off" if data.get("mic_muted") else ""
+        return ("Muted" if data.get("muted") else f"{round(min(data['level'], 1) * 100)}%") + mic
+    if shown == "timer" and isinstance(data, dict):
+        return "Done" if data.get("done") else f"{data['left'] // 60:02d}:{data['left'] % 60:02d}"
+    if shown == "notify" and isinstance(data, dict):
+        return (data.get("summary") or data.get("app") or "Notification")[:42]
+    if shown == "agent" and isinstance(data, dict):
+        parts = [data.get("source") or "Agent", data.get("where") or "", AGENT_LABEL.get(data.get("state"), "")]
+        return " · ".join(part for part in parts if part)[:42]
+    if shown == "text":
+        return text[:42]
+    if shown == "image":
+        return "Image"
+    if shown == "unplugged":
+        return "Keyboard unplugged"
+    if shown == "stock":
+        return "Stock clock"
+    return ""
 
 
 # ---- screen -----------------------------------------------------------------
@@ -679,10 +913,499 @@ class Screen:
         self.link.send(f.packets())
 
 
+PANEL_HTML = """<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RT100</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0b0f1a; color: #f5f7fa;
+         font: 15px/1.4 ui-sans-serif, system-ui, sans-serif; }
+  main { max-width: 440px; margin: 0 auto; padding: 22px 18px 32px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  h1 { margin: 0; font-size: 13px; letter-spacing: .18em; color: #4fd1ff; font-weight: 650; }
+  a.repo { color: #8b95a7; text-decoration: none; font-size: 13px;
+           border: 1px solid #263044; border-radius: 999px; padding: 6px 12px; }
+  a.repo:hover { color: #f5f7fa; border-color: #4fd1ff; }
+  .status { margin: 16px 0 14px; padding: 14px 16px; background: #121826;
+            border: 1px solid #263044; border-radius: 16px; border-left: 3px solid #4fd1ff; }
+  .status.alert { border-left-color: #ffb020; }
+  .status.down { border-left-color: #8b95a7; }
+  .status .mode { margin: 0; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #8b95a7; }
+  .status .screen { margin: 2px 0 0; font-size: 22px; font-weight: 650; }
+  .status .detail { margin: 4px 0 0; color: #c5cedb; min-height: 1.2em; }
+  #teams { margin: 0 0 8px; }
+  #teams[hidden] { display: none; }
+  #teams .note { margin: 8px 2px 0; color: #8b95a7; font-size: 13px; }
+  h2 { margin: 20px 0 10px; font-size: 12px; letter-spacing: .14em; color: #8b95a7;
+       font-weight: 650; text-transform: uppercase; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button, input { font: inherit; color: inherit; background: #151b2b;
+                  border: 1px solid #263044; border-radius: 12px; }
+  button { padding: 14px 12px; cursor: pointer; }
+  button.on { border-color: #4fd1ff; color: #4fd1ff; }
+  button.wide { grid-column: 1 / -1; width: 100%; }
+  form { display: flex; gap: 10px; }
+  input[type=text], input[type=number] { min-width: 0; padding: 14px; }
+  input[type=text] { flex: 1; }
+  label.row { display: flex; align-items: center; gap: 10px; padding: 7px 2px; }
+  label.dwell { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+  .drop { padding: 16px 10px; text-align: center; color: #8b95a7;
+          border: 1px dashed #263044; border-radius: 12px; }
+  .drop.on { border-color: #4fd1ff; color: #4fd1ff; }
+  footer { margin-top: 28px; font-size: 13px; }
+  footer a { color: #4fd1ff; text-decoration: none; }
+</style>
+<main>
+  <header>
+    <h1>RT100</h1>
+    <a class="repo" href="https://github.com/francescoiori/epomaker" target="_blank" rel="noopener">GitHub</a>
+  </header>
+  <section class="status" id="status">
+    <p class="mode" id="mode">Connecting</p>
+    <p class="screen" id="screen"></p>
+    <p class="detail" id="detail"></p>
+  </section>
+  <div id="teams" hidden></div>
+  <div class="grid" id="pages"></div>
+  <div class="grid" style="margin-top:10px">
+    <button id="pause" type="button">Pause</button>
+    <button id="resume" type="button">Rotate</button>
+    <button id="stock" class="wide" type="button">Stock clock</button>
+    <button id="custom" class="wide" type="button">Custom screen</button>
+  </div>
+  <form id="line">
+    <input id="text" type="text" maxlength="90" placeholder="A line for the screen" autocomplete="off">
+    <button type="submit">Show</button>
+  </form>
+  <h2>Timer</h2>
+  <form id="timer">
+    <input id="minutes" type="number" min="1" max="180" value="5">
+    <button type="submit">Start</button>
+  </form>
+  <h2>Rotation</h2>
+  <div id="rotate"></div>
+  <label class="dwell">Each page
+    <input id="seconds" type="number" min="3" max="60" step="1" value="10">
+    seconds
+  </label>
+  <label class="row"><input id="quiet" type="checkbox"> Quiet desktop notifications</label>
+  <h2>Picture</h2>
+  <div class="grid">
+    <div class="drop" id="drop-small" data-size="64">Drop small<br>GIFs play</div>
+    <div class="drop" id="drop-large" data-size="120">Drop large<br>about 120px</div>
+  </div>
+  <footer>
+    <a href="https://github.com/francescoiori/epomaker" target="_blank" rel="noopener">github.com/francescoiori/epomaker</a>
+  </footer>
+</main>
+<script>
+const pages = [["clock","Clock"],["system","System"],["media","Now playing"],["weather","Weather"],["agenda","Next up"],["volume","Volume"]];
+const box = document.querySelector("#pages");
+const rot = document.querySelector("#rotate");
+for (const [id, label] of pages) {
+  const b = document.createElement("button");
+  b.type = "button"; b.dataset.page = id; b.textContent = label;
+  b.onclick = () => send("page", id);
+  box.append(b);
+  const row = document.createElement("label");
+  row.className = "row";
+  const c = document.createElement("input");
+  c.type = "checkbox"; c.dataset.rotate = id;
+  c.onchange = saveRotation;
+  row.append(c, document.createTextNode(label));
+  rot.append(row);
+}
+document.querySelector("#pause").onclick = () => send("pause");
+document.querySelector("#resume").onclick = () => send("resume");
+document.querySelector("#stock").onclick = () => send("stock");
+document.querySelector("#custom").onclick = () => send("custom");
+document.querySelector("#seconds").onchange = saveRotation;
+document.querySelector("#quiet").onchange = (e) => send("quiet", e.target.checked ? "on" : "off");
+document.querySelector("#line").onsubmit = (e) => {
+  e.preventDefault();
+  const input = document.querySelector("#text");
+  if (input.value.trim()) send("text", input.value.trim());
+  input.value = "";
+};
+document.querySelector("#timer").onsubmit = (e) => {
+  e.preventDefault();
+  send("timer", document.querySelector("#minutes").value);
+};
+for (const drop of document.querySelectorAll(".drop")) {
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("on"); };
+  drop.ondragleave = () => drop.classList.remove("on");
+  drop.ondrop = async (e) => {
+    e.preventDefault();
+    drop.classList.remove("on");
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    await fetch("/image?size=" + drop.dataset.size, {method: "POST", body: file});
+    refresh();
+  };
+}
+function saveRotation() {
+  const names = [...document.querySelectorAll("[data-rotate]:checked")].map(b => b.dataset.rotate);
+  if (!names.length) { refresh(); return; }
+  send("rotation", names.join(","), {seconds: Number(document.querySelector("#seconds").value)});
+}
+function pageName(shown) {
+  return {clock:"Clock", system:"System", media:"Now playing", weather:"Weather",
+          agenda:"Next up", volume:"Volume", timer:"Timer",
+          notify:"Notification", agent:"Agent", text:"Your text", image:"Image",
+          unplugged:"Unplugged", stock:"Stock clock"}[shown] || shown || "RT100";
+}
+function fillStatus(s) {
+  const card = document.querySelector("#status");
+  const unplugged = s.link === "down" || s.shown === "unplugged";
+  card.classList.toggle("down", unplugged);
+  card.classList.toggle("alert", !unplugged && (s.shown === "agent" || s.shown === "notify"));
+  let mode = "Holding", screen = pageName(s.shown), detail = s.detail || "";
+  if (unplugged) {
+    mode = "Unplugged"; screen = "Keyboard unplugged"; detail = "The last picture stays on the screen.";
+  } else if (s.mode === "stock") {
+    mode = "Stock"; screen = "Stock clock"; detail = "";
+  } else if ((s.shown || "").endsWith("unavailable")) {
+    mode = s.mode === "rotate" ? "Rotating" : "Holding";
+    screen = s.shown[0].toUpperCase() + s.shown.slice(1);
+    detail = "";
+  } else if (s.mode === "rotate") {
+    mode = "Rotating";
+  }
+  if (detail === screen) detail = "";
+  document.querySelector("#mode").textContent = mode;
+  document.querySelector("#screen").textContent = screen;
+  document.querySelector("#detail").textContent = detail;
+}
+async function send(cmd, arg="", extra={}) {
+  await fetch("/command", {method:"POST", headers:{"Content-Type":"application/json"},
+                           body: JSON.stringify(Object.assign({cmd, arg}, extra))});
+  refresh();
+}
+async function refresh() {
+  const s = await fetch("/status").then(r => r.json());
+  fillStatus(s);
+  document.querySelectorAll("[data-page]").forEach(b =>
+    b.classList.toggle("on", s.mode === "hold" && s.page === b.dataset.page));
+  document.querySelector("#pause").classList.toggle("on", s.mode === "hold" && !s.page);
+  document.querySelector("#resume").classList.toggle("on", s.mode === "rotate");
+  document.querySelector("#stock").classList.toggle("on", s.mode === "stock");
+  document.querySelectorAll("[data-rotate]").forEach(b => { b.checked = (s.pages || []).includes(b.dataset.rotate); });
+  const sec = document.querySelector("#seconds");
+  if (document.activeElement !== sec && s.seconds) sec.value = s.seconds;
+  const quiet = document.querySelector("#quiet");
+  if (document.activeElement !== quiet) quiet.checked = !!s.quiet;
+  const teams = document.querySelector("#teams");
+  const sign = s.teams || {};
+  teams.replaceChildren();
+  if (sign.signed_in) {
+    teams.hidden = !sign.error;
+    if (sign.error) teams.textContent = sign.error;
+  } else {
+    teams.hidden = false;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "wide";
+    b.textContent = sign.waiting ? "Waiting for Teams…" : "Sign in to Teams";
+    b.onclick = () => send("teams");
+    teams.append(b);
+    if (sign.error) {
+      const note = document.createElement("p");
+      note.className = "note";
+      note.textContent = sign.error;
+      teams.append(note);
+    }
+  }
+}
+refresh();
+setInterval(refresh, 1000);
+</script>
+"""
+
+
+class Control:
+    """What the local page wants. The screen loop is the only thing that draws."""
+
+    def __init__(self, pages: list[str], seconds: float) -> None:
+        self._lock = threading.Lock()
+        pref_pages, pref_seconds, quiet = rotation_prefs()
+        cfg = load_config()
+        self.pages = pref_pages if "pages" in cfg else ([p for p in pages if p in PAGES] or pref_pages)
+        self.seconds = pref_seconds if "seconds" in cfg else min(60.0, max(3.0, seconds))
+        self.quiet = quiet
+        self.mode = "rotate"
+        self.page: str | None = None
+        self.text: str | None = None
+        self.image: tuple[bytes, int] | None = None
+        self.clip: dict | None = None
+        self.timer_until: float | None = None
+        self.enter = False
+        self.shown = "starting"
+        self.detail = ""
+        self.link = "up"
+
+    def snapshot(self):
+        with self._lock:
+            text, self.text = self.text, None
+            image, self.image = self.image, None
+            enter, self.enter = self.enter, False
+            return (self.mode, self.page, text, image, enter,
+                    self.quiet, list(self.pages), self.seconds)
+
+    def command(self, cmd: str, arg: str = "", data: dict | None = None) -> bool:
+        if cmd == "teams":
+            teamscal.begin()
+            return True
+        with self._lock:
+            if cmd == "resume":
+                self.mode, self.page = "rotate", None
+                self._clear_picture()
+                self.timer_until = None
+            elif cmd == "pause":
+                self.mode = "hold"
+            elif cmd == "page" and arg in PAGES:
+                self.mode, self.page = "hold", arg
+                self._clear_picture()
+                self.timer_until = None
+            elif cmd == "text" and arg.strip():
+                self.mode, self.page, self.text = "hold", None, arg.strip()[:90]
+                self._clear_picture()
+                self.timer_until = None
+            elif cmd == "timer":
+                try:
+                    minutes = int(float(arg))
+                except ValueError:
+                    return False
+                if not 1 <= minutes <= 180:
+                    return False
+                self.timer_until = time.time() + minutes * 60
+                self.mode, self.page = "hold", "timer"
+                self._clear_picture()
+            elif cmd == "stock":
+                self.mode = "stock"
+                self._clear_picture()
+                self.timer_until = None
+            elif cmd == "custom":
+                self.mode, self.page, self.enter = "rotate", None, True
+                self._clear_picture()
+                self.timer_until = None
+            elif cmd == "quiet":
+                self.quiet = arg.strip().lower() in ("1", "true", "on", "yes")
+                save_config({"quiet": self.quiet})
+            elif cmd == "rotation":
+                names = [p for p in (arg or "").split(",") if p in PAGES]
+                if not names:
+                    return False
+                try:
+                    seconds = float((data or {}).get("seconds", self.seconds))
+                except (TypeError, ValueError):
+                    return False
+                self.pages = names
+                self.seconds = min(60.0, max(3.0, seconds))
+                save_config({"pages": names, "seconds": self.seconds})
+            else:
+                return False
+            return True
+
+    def _clear_picture(self) -> None:
+        self.image = None
+        self.clip = None
+
+    def show_image(self, blob: bytes, size: int) -> None:
+        with self._lock:
+            self.mode, self.page = "hold", "image"
+            self.image = (blob, 120 if size >= 100 else 64)
+            self.clip = None
+            self.timer_until = None
+
+    def set_clip(self, frames: list) -> None:
+        with self._lock:
+            self.clip = {"frames": frames, "i": 0, "due": 0.0}
+
+    def next_clip_frame(self):
+        with self._lock:
+            clip = self.clip
+            if clip is None or self.page != "image":
+                return None
+            now = time.monotonic()
+            if now < clip["due"]:
+                return None
+            frame, delay = clip["frames"][clip["i"]]
+            clip["i"] = (clip["i"] + 1) % len(clip["frames"])
+            clip["due"] = now + delay
+            return frame
+
+    def clip_wait(self) -> float | None:
+        with self._lock:
+            if self.clip is None or self.page != "image":
+                return None
+            return self.clip["due"] - time.monotonic()
+
+    def clip_label(self) -> str:
+        with self._lock:
+            frames = self.clip["frames"] if self.clip else []
+            return "GIF" if len(frames) > 1 else "Image"
+
+    def timer_view(self) -> dict | None:
+        with self._lock:
+            if self.timer_until is None:
+                return None
+            left = int(self.timer_until - time.time())
+            if left > 0:
+                return {"left": left, "done": False}
+            return {"left": 0, "done": True}
+
+    def claim_finished_timer(self) -> bool:
+        """Hold the screen on DONE once a countdown reaches zero."""
+        with self._lock:
+            if self.timer_until is None or time.time() < self.timer_until or self.mode == "stock":
+                return False
+            if self.mode == "hold" and self.page == "timer":
+                return True
+            self.mode, self.page = "hold", "timer"
+            self.image = None
+            self.clip = None
+            return True
+
+    def release(self, detail: str) -> None:
+        with self._lock:
+            self.mode, self.page = "hold", None
+            self.shown, self.detail = "paused", detail
+
+    def mark(self, shown: str, detail: str | None = None) -> None:
+        with self._lock:
+            self.shown = shown
+            if detail is not None:
+                self.detail = detail
+            self.link = "down" if shown == "unplugged" else "up"
+
+    def status(self) -> dict:
+        with self._lock:
+            return {"mode": self.mode, "page": self.page, "shown": self.shown,
+                    "detail": self.detail, "quiet": self.quiet, "pages": list(self.pages),
+                    "seconds": self.seconds, "link": self.link, "teams": teamscal.signin()}
+
+
+def serve_panel(control: Control, port: int = 8765) -> None:
+    page = PANEL_HTML.encode()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.split("?", 1)[0] == "/status":
+                body = json.dumps(control.status()).encode()
+                kind = "application/json"
+            elif self.path.split("?", 1)[0] == "/":
+                body, kind = page, "text/html; charset=utf-8"
+            else:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", kind)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            path = self.path.split("?", 1)[0]
+            if path == "/image":
+                try:
+                    size = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    size = 0
+                if not 0 < size <= 3_000_000:
+                    self.send_error(413)
+                    return
+                query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                try:
+                    px = int((query.get("size") or ["64"])[0])
+                except ValueError:
+                    px = 64
+                control.show_image(self.rfile.read(size), px)
+                body = b'{"ok": true}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if path != "/command":
+                self.send_error(404)
+                return
+            try:
+                size = int(self.headers.get("Content-Length", "0"))
+                data = json.loads(self.rfile.read(size) or b"{}")
+                ok = control.command(str(data.get("cmd", "")), str(data.get("arg", "")), data)
+            except (ValueError, TypeError):
+                ok = False
+            body = json.dumps({"ok": ok}).encode()
+            self.send_response(200 if ok else 400)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, fmt, *args):
+            return
+
+    try:
+        httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    except OSError as exc:
+        print(f"control page not started: {exc}", flush=True)
+        return
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    print(f"control page http://127.0.0.1:{port}", flush=True)
+
+
 def _request_stop(signum: int, _frame) -> None:
     if _stop.is_set():
         raise KeyboardInterrupt
     _stop.set()
+
+
+def _fit_frame(img, size: int):
+    from PIL import Image
+    img = img.convert("RGB")
+    img.thumbnail((size, size))
+    canvas = Image.new("RGB", (size, size), (0x0B, 0x0F, 0x1A))
+    canvas.paste(img, ((size - img.width) // 2, (size - img.height) // 2))
+    return canvas
+
+
+def _decode_clip(blob: bytes, size: int) -> list:
+    """Frames of a still image or a GIF, each padded to a square of `size`."""
+    import io
+    from PIL import Image
+    im = Image.open(io.BytesIO(blob))
+    try:
+        count = min(int(getattr(im, "n_frames", 1) or 1), 24)
+    except (OSError, ValueError, AttributeError):
+        count = 1
+    canvas = Image.new("RGBA", im.size, (0x0B, 0x0F, 0x1A, 255))
+    frames = []
+    for index in range(count):
+        im.seek(index)
+        frame = im.convert("RGBA")
+        disposal = int(getattr(im, "disposal_method", None) or im.info.get("disposal_method") or 1)
+        previous = canvas.copy()
+        canvas.alpha_composite(frame)
+        delay = max(int(im.info.get("duration") or 100), 40) / 1000
+        frames.append((_fit_frame(canvas, size), delay if count > 1 else 1e9))
+        if disposal in (2, 3):
+            canvas = previous
+    if not frames:
+        raise ValueError("empty image")
+    return frames
+
+
+def _send_image(link: Link, screen: Screen, img, clear: bool) -> None:
+    frame = sp.Frame()
+    if clear:
+        frame.begin(BG)
+        screen.shown = {}
+    frame.image((sp.W - img.width) // 2, (sp.H - img.height) // 2, img)
+    link.send(frame.packets())
+    screen.page = "image"
 
 
 def run(link: Link, pages: list[str], seconds: float, stay: bool, notify: bool = True) -> None:
@@ -691,40 +1414,127 @@ def run(link: Link, pages: list[str], seconds: float, stay: bool, notify: bool =
     signal.signal(signal.SIGINT, _request_stop)
     signal.signal(signal.SIGTERM, _request_stop)
     notes = Notifications() if notify else None
-    if "weather" in pages and "latitude" not in load_config():
-        print("weather needs a location: rt100screen.py location CITY", flush=True)
-    link.send(sp.Frame().begin(BG).packets())
-    link.send([(sp.settime_packet(datetime.now()), 0)])
+    control = Control(pages, seconds)
+    threading.Thread(target=_agenda_loop, daemon=True).start()
+    serve_panel(control)
+    if "weather" in control.pages and "latitude" not in load_config():
+        print("weather needs a location: screen/rt100screen.py location CITY", flush=True)
     screen, index, switched = Screen(link), 0, time.monotonic()
+    ready = False
+    # Plugging the cable back in makes the keyboard restart the old interface on
+    # top of whatever we drew. Clear again once that restart has finished.
+    reenter: list[float] = []
     try:
         while not _stop.is_set():
-            note = notes.current() if notes else None
-            agent = agent_status()
-            if note:
-                screen.show("notify", notify_page(datetime.now(), note))
-            elif agent:
-                screen.show("agent", agent_page(datetime.now(), agent))
-            else:
-                available = []
-                for name in pages:
-                    render, source = PAGES[name]
-                    data = source()
-                    if name in ("media", "weather") and data is None:
-                        continue
-                    available.append((name, render, data))
-                if not available:
-                    time.sleep(1)
-                    continue
-                if time.monotonic() - switched >= seconds:
-                    index, switched = (index + 1) % len(available), time.monotonic()
-                name, render, data = available[index % len(available)]
-                widgets = render(datetime.now(), data)
-                widgets.update(dots(index % len(available), len(available)))
-                screen.show(name, widgets)
-            time.sleep(max(0.05, 1 - (time.time() % 1)))
+            if not link.alive and not link.reopen():
+                control.mark("unplugged", "Keyboard unplugged")
+                ready = False
+                reenter = []
+                time.sleep(1)
+                continue
+            mode, held, text, image, enter, quiet, rotate_pages, dwell = control.snapshot()
+            blink = False
+            if not ready:
+                enter = mode != "stock"
+                ready = True
+                now = time.monotonic()
+                reenter = [] if mode == "stock" else [now + 2.0, now + 5.0]
+            elif reenter and mode != "stock" and time.monotonic() >= reenter[0]:
+                enter = True
+                reenter.pop(0)
+            if control.claim_finished_timer():
+                mode, held, image = "hold", "timer", None
+            try:
+                if mode == "stock":
+                    if screen.page != "stock":
+                        link.send(sp.Frame().end().packets())
+                        screen.page, screen.shown = "stock", {}
+                    control.mark("stock", "Stock clock")
+                else:
+                    if enter or screen.page == "stock":
+                        link.send(sp.Frame().begin(BG).packets())
+                        link.send([(sp.settime_packet(datetime.now()), 0)])
+                        screen.page, screen.shown = None, {}
+                    if image is not None:
+                        try:
+                            control.set_clip(_decode_clip(image[0], image[1]))
+                        except (OSError, ValueError):
+                            control.release("Could not show that image")
+                    frame = control.next_clip_frame()
+                    if frame is not None:
+                        _send_image(link, screen, frame, screen.page != "image")
+                        control.mark("image", control.clip_label())
+                    elif text is not None:
+                        frame = sp.Frame().begin(BG)
+                        for i, line in enumerate(wrap(text, 15, 6)):
+                            frame.text(0, 24 + i * 32, line, FG, BG, 2)
+                        link.send(frame.packets())
+                        screen.page, screen.shown = "text", {}
+                        control.mark("text", caption("text", text=text))
+                    elif mode == "hold" and held == "image":
+                        control.mark("image", control.clip_label())
+                    elif mode == "hold" and held == "timer":
+                        ticking = control.timer_view() or {"left": 0, "done": True}
+                        screen.show("timer", timer_page(datetime.now(), ticking))
+                        control.mark("timer", caption("timer", ticking))
+                    elif mode == "hold" and held:
+                        render, source = PAGES[held]
+                        data = source()
+                        if data is None and held == "agenda":
+                            screen.show("agenda", agenda_empty())
+                            control.mark("agenda", "Nothing next")
+                        elif data is None and held in ("media", "weather", "volume"):
+                            control.mark(f"{held} unavailable")
+                        else:
+                            screen.show(held, render(datetime.now(), data))
+                            control.mark(held, caption(held, data))
+                    elif mode == "hold":
+                        control.mark(screen.page or "paused")
+                    else:
+                        note = notes.current() if notes and not quiet else None
+                        agent = agent_status()
+                        if note:
+                            screen.show("notify", notify_page(datetime.now(), note))
+                            control.mark("notify", caption("notify", note))
+                        elif agent:
+                            screen.show("agent", agent_page(datetime.now(), agent))
+                            control.mark("agent", caption("agent", agent))
+                            blink = agent.get("state") in ("waiting", "needs-you", "error")
+                        else:
+                            available = []
+                            for name in rotate_pages:
+                                render, source = PAGES[name]
+                                data = source()
+                                if name in ("media", "weather", "volume") and data is None:
+                                    continue
+                                if name == "agenda" and data is None:
+                                    continue
+                                available.append((name, render, data))
+                            if available:
+                                if time.monotonic() - switched >= dwell:
+                                    index, switched = (index + 1) % len(available), time.monotonic()
+                                name, render, data = available[index % len(available)]
+                                widgets = render(datetime.now(), data)
+                                widgets.update(dots(index % len(available), len(available)))
+                                screen.show(name, widgets)
+                                control.mark(name, caption(name, data))
+            except LinkDown:
+                ready = False
+                reenter = []
+                control.mark("unplugged", "Keyboard unplugged")
+            pause = max(0.05, 1 - (time.time() % 1))
+            if blink:
+                pause = min(pause, 0.45)
+            wait = control.clip_wait()
+            if wait is not None:
+                pause = min(pause, max(0.05, wait))
+            time.sleep(pause)
     finally:
-        if not stay:
-            link.send(sp.Frame().end().packets())
+        if link.alive and not stay and screen.page != "stock":
+            try:
+                link.send(sp.Frame().end().packets())
+            except LinkDown:
+                pass
 
 
 def acquire_lock():
@@ -776,10 +1586,7 @@ def save_location(a) -> None:
         cfg = {"latitude": h["latitude"], "longitude": h["longitude"], "name": a.name or h["name"]}
     else:
         sys.exit("usage: rt100screen.py location CITY")
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(cfg, f, indent=2)
-        f.write("\n")
+    save_config(cfg)
     print(f"saved {cfg['name']} ({cfg['latitude']:.3f}, {cfg['longitude']:.3f})")
 
 
@@ -787,7 +1594,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("action", choices=["run", "settime", "stock", "stop", "text", "image", "location", "agent"])
     ap.add_argument("arg", nargs="?")
-    ap.add_argument("--pages", default="clock,system,media,weather")
+    ap.add_argument("--pages", default=",".join(DEFAULT_PAGES))
     ap.add_argument("--seconds", type=float, default=10)
     ap.add_argument("--stay", action="store_true", help="keep custom mode on exit")
     ap.add_argument("--no-notify", action="store_true", help="ignore desktop notifications")
@@ -813,7 +1620,7 @@ def main() -> None:
         stop_running()
         return
     lock = None if a.dry_run else acquire_lock()
-    link = Link(a.dry_run, a.dongle, a.us_per_pixel)
+    link = Link(a.dry_run, a.dongle, a.us_per_pixel, require=a.action != "run")
     if a.action == "run":
         pages = [p for p in a.pages.split(",") if p]
         unknown = [p for p in pages if p not in PAGES]

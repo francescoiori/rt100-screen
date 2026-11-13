@@ -8,16 +8,30 @@ alwaysApply: true
 ## State (working, verified on the device)
 - Screen runs custom firmware `device/custom/out/firmwareOledFile.bin` (I2C clock fix +
   custom display mode). Do not rebuild/reflash it for host-side work.
-- `screen/rt100screen.py run` rotates clock, system, now-playing and weather. A desktop
-  notification (app + summary only) replaces the page for 10 s. `--no-notify` disables that.
+- `screen/rt100screen.py run` rotates clock, system, now-playing, weather, next meeting
+  and volume. A desktop notification (app + summary only) replaces the page for 10 s.
+  `--no-notify` disables that. Battery is on the system page. A timer is started from
+  the control page.
+- Next meeting is the Teams calendar (`screen/teamscal.py`), not the Google calendars
+  in GNOME. Sign-in opens a browser as Microsoft Graph Command Line Tools; the GNOME
+  app cannot read calendars. The token lives in `~/.config/rt100screen-teams.json`
+  (mode 0600). Do not print it, and do not commit it.
 - Weather reads `~/.config/rt100screen.json`. It is set to London (51.513, -0.092).
   Change it only when the user asks: `screen/rt100screen.py location CITY`.
 - Agent alerts: Cursor `stop` and Claude `Stop`/`Notification` write
-  `~/.local/state/rt100screen/agent.json`. The screen holds that page for 3 minutes.
+  `~/.local/state/rt100screen/agent.json`. The screen holds that page for 3 minutes
+  and flashes WAITING or NEEDS YOU. The app name and the window title are on the page.
   The next prompt clears it. Do not remove those hooks unless the user asks.
 - Only one sender. A second copy exits. `screen/rt100screen.py stop` asks the running one to
   return the screen to the stock UI.
-- `screen/rt100screen.py image` scales to 64px. `--full` allows larger and is slow.
+- Unplugging the wired keyboard leaves the last custom frame on the screen. The keyboard
+  restarts its old interface when the cable returns, so the service clears the panel
+  again at 2s and 5s. A purpose-drawn offline card needs a firmware change and an
+  explicit yes before building it.
+- The 2.4 GHz dongle (PID 0x4011, `--dongle`) is still untested. Do not use it unless the
+  user explicitly says to try wireless.
+- Dropped pictures are 64px or 120px. GIFs play up to 24 frames. `screen/rt100screen.py image`
+  still scales to 64px; `--full` allows larger and is slow.
 - `screen/rt100.py` = vendor HID client, `screen/screenproto.py` = packet encoder, `screen/oled_flash.py` = flasher (forbidden, see safety rule).
 - Layout: `screen/` is the laptop program, `device/` is firmware, `research/` is the dumps and the vendor driver.
 
