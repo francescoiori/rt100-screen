@@ -77,7 +77,7 @@ class Menu:
         open_panel.connect("activate", lambda *_: subprocess.Popen([PANEL], start_new_session=True))
         github = Gtk.MenuItem(label="GitHub")
         github.connect("activate", lambda *_: subprocess.Popen(
-            ["xdg-open", "https://github.com/francescoiori/epomaker"], start_new_session=True))
+            ["xdg-open", "https://github.com/francescoiori/rt100-screen"], start_new_session=True))
         quit_item = Gtk.MenuItem(label="Quit")
         quit_item.connect("activate", lambda *_: Gtk.main_quit())
         menu.append(stock)

@@ -1105,7 +1105,7 @@ PANEL_HTML = """<!doctype html>
 <main>
   <header>
     <h1>RT100</h1>
-    <a class="repo" href="https://github.com/francescoiori/epomaker" target="_blank" rel="noopener" data-tip="Open this project on GitHub">GitHub</a>
+    <a class="repo" href="https://github.com/francescoiori/rt100-screen" target="_blank" rel="noopener" data-tip="Open this project on GitHub">GitHub</a>
   </header>
   <section class="status" id="status">
     <p class="mode" id="mode">Connecting</p>
@@ -1157,7 +1157,7 @@ PANEL_HTML = """<!doctype html>
     <div class="drop minor" id="drop-full" data-size="240" data-tip="Click or drop a picture that fills the 240px panel. The first frame takes longer.">Edge to edge. The first frame is slower.</div>
   </section>
   <footer>
-    <a href="https://github.com/francescoiori/epomaker" target="_blank" rel="noopener">github.com/francescoiori/epomaker</a>
+    <a href="https://github.com/francescoiori/rt100-screen" target="_blank" rel="noopener">github.com/francescoiori/rt100-screen</a>
   </footer>
 </main>
 <script>
