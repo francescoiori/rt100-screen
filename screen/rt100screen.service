@@ -4,7 +4,7 @@ After=default.target
 
 [Service]
 Type=simple
-ExecStart=/home/francesco/Documents/Code/epomaker/.venv/bin/python /home/francesco/Documents/Code/epomaker/screen/rt100screen.py run
+ExecStart=@ROOT@/.venv/bin/python @ROOT@/screen/rt100screen.py run
 Restart=on-failure
 RestartSec=5
 

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Top-bar menu for the RT100 screen. Talks to the local control page only."""
 import json
+import os
 import subprocess
 import urllib.request
 
@@ -11,8 +12,9 @@ gi.require_version("AyatanaAppIndicator3", "0.1")
 from gi.repository import AyatanaAppIndicator3, GLib, Gtk
 
 URL = "http://127.0.0.1:8765"
-ICON = "/home/francesco/Documents/Code/epomaker/screen/rt100-screen.png"
-PANEL = "/home/francesco/Documents/Code/epomaker/screen/rt100-panel"
+HERE = os.path.dirname(os.path.abspath(__file__))
+ICON = os.path.join(HERE, "rt100-screen.png")
+PANEL = os.path.join(HERE, "rt100-panel")
 PAGES = (("clock", "Clock"), ("system", "System"), ("media", "Now playing"),
          ("weather", "Weather"), ("agenda", "Next up"), ("volume", "Volume"))
 
@@ -66,6 +68,9 @@ class Menu:
         self.quiet.connect("toggled", self._quiet)
         menu.append(self.quiet)
         menu.append(Gtk.SeparatorMenuItem())
+        self.stored = Gtk.MenuItem(label="Stored picture")
+        self.stored.connect("activate", lambda *_: post("stored"))
+        menu.append(self.stored)
         stock = Gtk.MenuItem(label="Stock clock")
         stock.connect("activate", lambda *_: post("stock"))
         open_panel = Gtk.MenuItem(label="Open")
@@ -99,6 +104,7 @@ class Menu:
             detail = status.get("detail") or status.get("shown") or "RT100"
             self.status.set_label(str(detail)[:48])
         held = status.get("page") if status and status.get("mode") == "hold" else None
+        self.stored.set_label(("● " if held == "stored" else "") + "Stored picture")
         for key, item in self.pages.items():
             item.set_label(("● " if key == held else "") + dict(PAGES)[key])
         if status is not None:

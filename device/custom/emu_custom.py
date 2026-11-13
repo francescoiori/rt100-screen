@@ -7,7 +7,7 @@ main-loop hook draws through the stock LCD routines. The 1-byte SPI send at
 writes are recorded, and the stock UI functions are stubs that count calls.
 Writes out/emu_<page>.png.
 """
-import os, struct, sys
+import os, re, struct, sys
 from datetime import datetime
 from PIL import Image
 from unicorn import Uc, UcError, UC_ARCH_ARM, UC_MODE_THUMB, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
@@ -199,6 +199,78 @@ def main():
     sent.clear()
     screen.show("clock", later)
     print(f"clock, one second later: {len(sent)} packet(s)")
+
+    hold = int(re.search(r"#define CLIP_HOLD (\d+)",
+                         open(os.path.join(HERE, "clip.h")).read()).group(1))
+
+    def panel_rgb():
+        img = Image.new("RGB", (240, 240))
+        img.putdata([((c >> 11) * 255 // 31, (c >> 5 & 63) * 255 // 63, (c & 31) * 255 // 31)
+                     for row in emu.lcd.fb for c in row])
+        return img
+
+    emu.frame(0x3C, sp.Frame().clip().packets()[0][0])
+    check(emu.loop() == LOOP_RESUME, "stored clip keeps the stock UI off")
+    for n in range(4):
+        if n:
+            for _ in range(hold):
+                emu.loop()
+            check(emu.loop() == LOOP_RESUME, f"stored clip advances to pose {n}")
+        got = panel_rgb()
+        exp = Image.open(os.path.join(HERE, "out", f"clip_expect_{n}.png")).convert("RGB")
+        flat = getattr(Image.Image, "get_flattened_data", None)
+        same = list(flat(got) if flat else got.getdata()) == list(flat(exp) if flat else exp.getdata())
+        check(same, f"stored clip pose {n} matches the reduced GIF")
+        path = os.path.join(HERE, "out", f"emu_clip_{n}.png")
+        emu.lcd.png(path)
+        print(f"clip pose {n} -> {path}")
+
+    for _ in range(hold):
+        emu.loop()
+    check(emu.loop() == LOOP_RESUME, "stored clip loops without clearing the panel")
+    exp0 = Image.open(os.path.join(HERE, "out", "clip_expect_0.png")).convert("RGB")
+    flat = getattr(Image.Image, "get_flattened_data", None)
+    again = panel_rgb()
+    check(list(flat(again) if flat else again.getdata()) == list(flat(exp0) if flat else exp0.getdata()),
+          "stored clip loops back to the first pose")
+    emu.lcd.png(os.path.join(HERE, "out", "emu_clip_loop.png"))
+    print("clip loop -> emu_clip_loop.png")
+
+    import gen_clip
+    enc = gen_clip.encode_gif(open(os.path.join(HERE, "clip.gif"), "rb").read(),
+                              indexes=(0, 6, 12, 18))
+
+    def upload_packets(data, key, clear):
+        frame = sp.Frame()
+        frame.uhead(enc["w"], enc["h"], enc["x"], enc["y"], enc["pal"], clear)
+        if key:
+            frame.ukey(data)
+        elif data:
+            frame.urun(data)
+        return frame.packets()
+
+    def matches(n, label):
+        got = panel_rgb()
+        exp = Image.open(os.path.join(HERE, "out", f"clip_expect_{n}.png")).convert("RGB")
+        flat = getattr(Image.Image, "get_flattened_data", None)
+        same = list(flat(got) if flat else got.getdata()) == list(flat(exp) if flat else exp.getdata())
+        check(same, label)
+
+    blobs = [enc["key"], *enc["deltas"]]
+    for n, blob in enumerate(blobs):
+        emu.send(upload_packets(blob, n == 0, n == 0), check)
+        matches(n, f"uploaded clip pose {n} matches the reduced GIF")
+        path = os.path.join(HERE, "out", f"emu_upload_{n}.png")
+        emu.lcd.png(path)
+        print(f"upload pose {n} -> {path}")
+
+    emu.send(upload_packets(enc["key"], True, False), check)
+    matches(0, "looped upload redraws the first pose")
+    emu.lcd.png(os.path.join(HERE, "out", "emu_upload_loop.png"))
+    print("upload loop -> emu_upload_loop.png")
+    emu.send(sp.Frame().fill(0, 0, 1, 1, 0xF800).packets(), check)
+    emu.send(upload_packets(enc["key"], True, False), check)
+    check(emu.lcd.fb[0][0] == 0xF800, "looped upload leaves the side bars alone")
 
     emu.send(sp.Frame().end().packets(), check)
     check(emu.calls.get("reset", 0) >= 1, "END reboots to the stock UI")

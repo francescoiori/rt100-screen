@@ -7,7 +7,9 @@ alwaysApply: true
 
 ## State (working, verified on the device)
 - Screen runs custom firmware `device/custom/out/firmwareOledFile.bin` (I2C clock fix +
-  custom display mode). Do not rebuild/reflash it for host-side work.
+  custom display mode + a four-pose clip of `device/custom/clip.gif`, played by
+  opcode `0x11`, plus upload opcodes `0x12`–`0x14`). A stored-clip loop does not
+  clear the panel. Do not rebuild/reflash it for host-side work.
 - `screen/rt100screen.py run` rotates clock, system, now-playing, weather, next meeting
   and volume. A desktop notification (app + summary only) replaces the page for 10 s.
   `--no-notify` disables that. Battery is on the system page. A timer is started from
@@ -30,14 +32,22 @@ alwaysApply: true
   explicit yes before building it.
 - The 2.4 GHz dongle (PID 0x4011, `--dongle`) is still untested. Do not use it unless the
   user explicitly says to try wireless.
-- Dropped pictures are 64px or 120px. GIFs play up to 24 frames. `screen/rt100screen.py image`
-  still scales to 64px; `--full` allows larger and is slow.
+- The control page can play the four-pose clip stored in the firmware (opcode 0x11).
+  Click or drop encodes the upload as the same compact clip (opcodes 0x12–0x14).
+  A GIF keeps every frame, up to 24, timed from the file. The first pose is sent
+  once and fills the side bars; the loop sends only the pixels that changed,
+  including the change back to the first frame. That does not replace the clip
+  stored in flash, and it is not written into the screen's program flash.
+- Dropped pictures and GIFs play at 200px. Edge-to-edge is 240px and slower.
+  GIF frames send only the pixels that changed, and flat areas go as fills.
+  GIFs play up to 24 frames. `screen/rt100screen.py image` scales to 200px; `--full` is the whole panel.
 - `screen/rt100.py` = vendor HID client, `screen/screenproto.py` = packet encoder, `screen/oled_flash.py` = flasher (forbidden, see safety rule).
 - Layout: `screen/` is the laptop program, `device/` is firmware, `research/` is the dumps and the vendor driver.
 
 ## Not done yet
-- **Pacing** is still the guess of 6 µs per pixel. Change `--us-per-pixel` only while the
-  user is watching a full-screen fill, and only lower it if the picture stays correct.
+- **Pacing** is still the guess of 6 µs per pixel. The gap between packets is 0.5 ms.
+  Change `--us-per-pixel` only while the user is watching a full-screen fill, and only lower it if the picture stays correct.
+  If a picture tears after the shorter gap, raise `packet_delay` rather than guessing.
 
 Autostart is enabled (`systemctl --user enable` already done). Do not disable it unless the user asks.
 

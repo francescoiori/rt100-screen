@@ -1,24 +1,24 @@
 Archive member included to satisfy reference by file (symbol)
 
-/home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uqi.o)
-                              /tmp/cct80Qgi.o (__gnu_thumb1_case_uqi)
+/home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uhi.o)
+                              /tmp/ccfusUhl.o (__gnu_thumb1_case_uhi)
 
 Discarded input sections
 
- .text          0x00000000        0x0 /tmp/ccc5YUIk.o
- .data          0x00000000        0x0 /tmp/ccc5YUIk.o
- .bss           0x00000000        0x0 /tmp/ccc5YUIk.o
+ .text          0x00000000        0x0 /tmp/ccwI6lAY.o
+ .data          0x00000000        0x0 /tmp/ccwI6lAY.o
+ .bss           0x00000000        0x0 /tmp/ccwI6lAY.o
  .ARM.attributes
-                0x00000000       0x21 /tmp/ccc5YUIk.o
- .text          0x00000000        0x0 /tmp/cct80Qgi.o
- .data          0x00000000        0x0 /tmp/cct80Qgi.o
- .comment       0x00000000       0x3a /tmp/cct80Qgi.o
+                0x00000000       0x21 /tmp/ccwI6lAY.o
+ .text          0x00000000        0x0 /tmp/ccfusUhl.o
+ .data          0x00000000        0x0 /tmp/ccfusUhl.o
+ .comment       0x00000000       0x3a /tmp/ccfusUhl.o
  .ARM.attributes
-                0x00000000       0x2c /tmp/cct80Qgi.o
- .data          0x00000000        0x0 /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uqi.o)
- .bss           0x00000000        0x0 /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uqi.o)
+                0x00000000       0x2c /tmp/ccfusUhl.o
+ .data          0x00000000        0x0 /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uhi.o)
+ .bss           0x00000000        0x0 /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uhi.o)
  .ARM.attributes
-                0x00000000       0x1e /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uqi.o)
+                0x00000000       0x1e /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uhi.o)
 
 Memory Configuration
 
@@ -29,69 +29,75 @@ RAM              0x0002bbb0         0x00001450         rw
 
 Linker script and memory map
 
-LOAD /tmp/ccc5YUIk.o
-LOAD /tmp/cct80Qgi.o
+LOAD /tmp/ccwI6lAY.o
+LOAD /tmp/ccfusUhl.o
 LOAD /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a
                 0x0101195c                        stock_draw0 = 0x101195c
                 0x01014314                        stock_idle = 0x1014314
                 0x010104d4                        loop_resume = 0x10104d4
 
-.text           0x01017eb8      0xabc
+.text           0x01017eb8     0x4440
  *(.text.hooks)
- .text.hooks    0x01017eb8       0x20 /tmp/ccc5YUIk.o
+ .text.hooks    0x01017eb8       0x20 /tmp/ccwI6lAY.o
                 0x01017eb8                loop_hook
  *(.text.custom_frame_hook)
  .text.custom_frame_hook
-                0x01017ed8      0x13c /tmp/cct80Qgi.o
+                0x01017ed8      0x13c /tmp/ccfusUhl.o
                 0x01017ed8                custom_frame_hook
  *(.text*)
- .text.push     0x01018014       0x14 /tmp/cct80Qgi.o
- .text.window   0x01018028       0x40 /tmp/cct80Qgi.o
- .text.fill     0x01018068       0x38 /tmp/cct80Qgi.o
+ .text.push     0x01018014       0x14 /tmp/ccfusUhl.o
+ .text.clip_runs
+                0x01018028       0x70 /tmp/ccfusUhl.o
+ .text.upload_emit
+                0x01018098       0x3c /tmp/ccfusUhl.o
+ .text.window   0x010180d4       0x40 /tmp/ccfusUhl.o
+ .text.fill     0x01018114       0x38 /tmp/ccfusUhl.o
+ .text.feed_get
+                0x0101814c       0x48 /tmp/ccfusUhl.o
  .text.custom_tick
-                0x010180a0      0x2d0 /tmp/cct80Qgi.o
-                0x010180a0                custom_tick
- .text          0x01018370       0x14 /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uqi.o)
-                0x01018370                __gnu_thumb1_case_uqi
+                0x01018194      0x730 /tmp/ccfusUhl.o
+                0x01018194                custom_tick
+ .text          0x010188c4       0x14 /home/francesco/tools/xpack-arm-none-eabi-gcc-15.2.1-1.1/bin/../lib/gcc/arm-none-eabi/15.2.1/thumb/v6-m/nofp/libgcc.a(_thumb1_case_uhi.o)
+                0x010188c4                __gnu_thumb1_case_uhi
  *(.rodata*)
- .rodata        0x01018384      0x5f0 /tmp/cct80Qgi.o
+ .rodata        0x010188d8     0x3a20 /tmp/ccfusUhl.o
 
-.glue_7         0x01018974        0x0
- .glue_7        0x01018974        0x0 linker stubs
+.glue_7         0x0101c2f8        0x0
+ .glue_7        0x0101c2f8        0x0 linker stubs
 
-.glue_7t        0x01018974        0x0
- .glue_7t       0x01018974        0x0 linker stubs
+.glue_7t        0x0101c2f8        0x0
+ .glue_7t       0x0101c2f8        0x0 linker stubs
 
-.vfp11_veneer   0x01018974        0x0
- .vfp11_veneer  0x01018974        0x0 linker stubs
+.vfp11_veneer   0x0101c2f8        0x0
+ .vfp11_veneer  0x0101c2f8        0x0 linker stubs
 
-.v4_bx          0x01018974        0x0
- .v4_bx         0x01018974        0x0 linker stubs
+.v4_bx          0x0101c2f8        0x0
+ .v4_bx         0x0101c2f8        0x0 linker stubs
 
-.iplt           0x01018974        0x0
- .iplt          0x01018974        0x0 /tmp/ccc5YUIk.o
+.iplt           0x0101c2f8        0x0
+ .iplt          0x0101c2f8        0x0 /tmp/ccwI6lAY.o
 
-.rel.dyn        0x01018974        0x0
- .rel.iplt      0x01018974        0x0 /tmp/ccc5YUIk.o
+.rel.dyn        0x0101c2f8        0x0
+ .rel.iplt      0x0101c2f8        0x0 /tmp/ccwI6lAY.o
 
 .data
  *(.data*)
 
-.igot.plt       0x0002bbb0        0x0 load address 0x01018974
- .igot.plt      0x0002bbb0        0x0 /tmp/ccc5YUIk.o
+.igot.plt       0x0002bbb0        0x0 load address 0x0101c2f8
+ .igot.plt      0x0002bbb0        0x0 /tmp/ccwI6lAY.o
 
-.bss            0x0002bbb0      0x810 load address 0x01018974
+.bss            0x0002bbb0     0x1058 load address 0x0101c2f8
                 0x0002bbb0                        __bss_start = .
  *(.bss*)
- .bss           0x0002bbb0      0x810 /tmp/cct80Qgi.o
+ .bss           0x0002bbb0     0x1058 /tmp/ccfusUhl.o
  *(COMMON)
-                0x0002c3c0                        . = ALIGN (0x4)
-                0x0002c3c0                        __bss_end = .
+                0x0002cc08                        . = ALIGN (0x4)
+                0x0002cc08                        __bss_end = .
 
 /DISCARD/
  *(.ARM.exidx*)
  *(.ARM.attributes)
  *(.comment)
                 0x00000001                        ASSERT ((SIZEOF (.data) == 0x0), initialised data is not supported: nothing copies it to RAM)
-OUTPUT(/home/francesco/Documents/Code/epomaker/re/custom/out/custom.elf elf32-littlearm)
+OUTPUT(/home/francesco/Documents/Code/epomaker/device/custom/out/custom.elf elf32-littlearm)
 LOAD linker stubs

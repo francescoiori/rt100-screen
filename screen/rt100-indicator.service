@@ -4,7 +4,7 @@ After=default.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /home/francesco/Documents/Code/epomaker/screen/rt100-indicator
+ExecStart=/usr/bin/python3 @ROOT@/screen/rt100-indicator
 Restart=on-failure
 RestartSec=5
 

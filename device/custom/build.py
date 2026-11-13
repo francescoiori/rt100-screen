@@ -53,6 +53,7 @@ def b(pc, target):
 def build_code():
     os.makedirs(OUT, exist_ok=True)
     subprocess.check_call([sys.executable, os.path.join(HERE, "gen_font.py")])
+    subprocess.check_call([sys.executable, os.path.join(HERE, "gen_clip.py")])
     elf = os.path.join(OUT, "custom.elf")
     subprocess.check_call([tool("gcc"), *CFLAGS, "-T", os.path.join(HERE, "link.ld"),
                            "-Wl,--gc-sections", "-Wl,-Map=" + os.path.join(OUT, "custom.map"),

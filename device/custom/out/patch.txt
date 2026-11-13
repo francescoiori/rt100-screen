@@ -1,8 +1,8 @@
 0x01011fee: e4 48 86 71 29 e7 -> 05 f0 73 ff 29 e7   unknown-command path -> custom_frame_hook
 0x010104b0: 01 f0 54 fa -> 07 f0 02 fd   main loop first UI call -> loop_hook
-0x01017e64: 60 bb 00 00 -> 74 c3 00 00   zero-init 0x2004c+0xc374 (was 0xbb60)
-0x01017eb8..0x01018974: appended 2748 bytes of code
-.bss 0x2bbb0..0x2c3c0
+0x01017e64: 60 bb 00 00 -> bc cb 00 00   zero-init 0x2004c+0xcbbc (was 0xbb60)
+0x01017eb8..0x0101c2f8: appended 17472 bytes of code
+.bss 0x2bbb0..0x2cc08
 loop_hook = 0x01017eb8
 custom_frame_hook = 0x01017ed8
-custom_tick = 0x010180a0
+custom_tick = 0x01018194

@@ -9,7 +9,18 @@ while [ "$i" -lt 20 ]; do
   i=$((i + 1))
   sleep 0.25
 done
-exec /usr/bin/google-chrome \
+
+browser=""
+for candidate in google-chrome google-chrome-stable chromium chromium-browser; do
+  if command -v "$candidate" >/dev/null 2>&1; then
+    browser=$candidate
+    break
+  fi
+done
+if [ -z "$browser" ]; then
+  exec xdg-open http://127.0.0.1:8765/
+fi
+exec "$browser" \
   --app=http://127.0.0.1:8765/ \
   --class=RT100Screen \
   --user-data-dir="${HOME}/.local/share/rt100-screen/chrome" \

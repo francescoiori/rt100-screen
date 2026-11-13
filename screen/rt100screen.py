@@ -41,6 +41,8 @@ import teamscal
 PASSTHROUGH = 0x31
 NOOP = bytes([sp.PKT_DRAW]).ljust(sp.PACKET, b"\0")
 
+# Uploaded clips are played by the screen from the compact format.
+FAST_UPLOAD = True
 BG = sp.hexcolor("0b0f1a")
 FG = sp.hexcolor("f5f7fa")
 ACCENT = sp.hexcolor("4fd1ff")
@@ -57,7 +59,7 @@ class LinkDown(Exception):
 
 class Link:
     def __init__(self, dry_run: bool = False, dongle: bool = False,
-                 us_per_pixel: float = 6.0, packet_delay: float = 0.004,
+                 us_per_pixel: float = 6.0, packet_delay: float = 0.0005,
                  require: bool = True) -> None:
         self.dry_run, self.us_per_pixel, self.packet_delay = dry_run, us_per_pixel, packet_delay
         self.dongle = dongle
@@ -244,15 +246,18 @@ def system_page(_now: datetime, s: dict) -> dict:
             ("ram", "RAM", s["ram"] / 100, f"{s['ram']:.0f}%")]
     if s.get("temp") is not None:
         rows.append(("temp", "TEMP", (s["temp"] - 30) / 70, f"{s['temp']:.0f}C"))
+    # Scale-2 text is 32px tall. The meter goes under the words, and the
+    # battery line stays above the page dots at y=224.
     for i, (key, label, frac, value) in enumerate(rows):
-        y = 44 + i * 44
+        y = 48 + i * 46
         w[key + "_l"] = Text(16, y, 4, label, MUTED)
         w[key + "_v"] = Text(144, y, 5, value, FG, 2, "right")
-        w[key + "_b"] = Bar(16, y + 22, 208, 8, frac, level(frac))
+        w[key + "_b"] = Bar(16, y + 34, 208, 6, frac, level(frac))
     bat = s.get("battery")
     if bat:
         state = "PLUGGED" if bat["plugged"] else "BATTERY"
-        w["bat"] = Text(16, 196, 13, f"{bat['percent']}%  {state}", ACCENT if bat["plugged"] else WARN, 2, "center")
+        w["bat"] = Text(16, 48 + len(rows) * 46, 13, f"{bat['percent']}%  {state}",
+                        ACCENT if bat["plugged"] else WARN, 2, "center")
     return w
 
 
@@ -566,6 +571,78 @@ def weather_page(_now: datetime, w: dict) -> dict:
 
 # ---- notifications ----------------------------------------------------------
 
+def _display_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":1")
+    return env
+
+
+def _words(text: str) -> list[str]:
+    word, out = [], []
+    for ch in text.lower():
+        if ch.isalnum():
+            word.append(ch)
+        elif word:
+            out.append("".join(word))
+            word = []
+    if word:
+        out.append("".join(word))
+    return out
+
+
+def focused_window() -> tuple[str, str]:
+    """WM_CLASS and title of the window in front. Empty if it cannot be read."""
+    env = _display_env()
+    try:
+        root = subprocess.check_output(
+            ["xprop", "-root", "_NET_ACTIVE_WINDOW"],
+            env=env, text=True, timeout=0.4, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return "", ""
+    wid = next((part for part in root.split() if part.startswith("0x")), "")
+    if not wid or wid in ("0x0", "0x0,"):
+        return "", ""
+    try:
+        info = subprocess.check_output(
+            ["xprop", "-id", wid.rstrip(","), "WM_CLASS", "_NET_WM_NAME"],
+            env=env, text=True, timeout=0.4, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.TimeoutExpired):
+        return "", ""
+    classes, title = [], ""
+    for line in info.splitlines():
+        if line.startswith("WM_CLASS"):
+            classes.extend(_quoted_fields(line))
+        elif line.startswith("_NET_WM_NAME"):
+            names = _quoted_fields(line)
+            title = names[-1] if names else ""
+    return " ".join(classes), title
+
+
+def _quoted_fields(line: str) -> list[str]:
+    out, i = [], 0
+    while True:
+        start = line.find('"', i)
+        if start < 0:
+            return out
+        end = line.find('"', start + 1)
+        if end < 0:
+            return out
+        out.append(line[start + 1:end])
+        i = end + 1
+
+
+def window_is_app(app: str, classes: str, title: str) -> bool:
+    """True when the focused window is the application that sent the notice."""
+    app_c = "".join(_words(app))
+    if len(app_c) < 3:
+        return False
+    for token in _words(classes):
+        if len(token) >= 3 and (token in app_c or app_c in token):
+            return True
+    tail = "".join(_words(title.split(" - ")[-1] if title else ""))
+    return len(tail) >= 3 and (app_c in tail or tail in app_c)
+
+
 def _dbus_string(line: str) -> str | None:
     text = line.strip()
     if not text.startswith('string "'):
@@ -628,9 +705,17 @@ class Notifications:
 
     def current(self, hold: float = 10.0) -> dict | None:
         with self._lock:
-            if self._latest and time.monotonic() - self._latest[0] < hold:
-                return {"app": self._latest[1], "summary": self._latest[2]}
-        return None
+            latest = self._latest
+            if latest is None or time.monotonic() - latest[0] >= hold:
+                return None
+            app, summary = latest[1], latest[2]
+        classes, title = focused_window()
+        if window_is_app(app, classes, title):
+            with self._lock:
+                if self._latest is latest:
+                    self._latest = None
+            return None
+        return {"app": app, "summary": summary}
 
     def _listen(self) -> None:
         cmd = ["dbus-monitor", "--session",
@@ -676,8 +761,7 @@ def _window_label(source: str, folder: str) -> str:
     if not folder:
         return ""
     try:
-        env = os.environ.copy()
-        env.setdefault("DISPLAY", ":1")
+        env = _display_env()
         tree = subprocess.check_output(
             ["xwininfo", "-root", "-tree"], env=env, text=True, timeout=2, stderr=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired):
@@ -937,29 +1021,57 @@ PANEL_HTML = """<!doctype html>
   #teams { margin: 0 0 8px; }
   #teams[hidden] { display: none; }
   #teams .note { margin: 8px 2px 0; color: #8b95a7; font-size: 13px; }
-  h2 { margin: 20px 0 10px; font-size: 12px; letter-spacing: .14em; color: #8b95a7;
+  h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: .14em; color: #8b95a7;
        font-weight: 650; text-transform: uppercase; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .card { margin-top: 14px; padding: 14px; background: #121826;
+          border: 1px solid #1c2433; border-radius: 16px; }
+  .hint { margin: -4px 0 10px; color: #8b95a7; font-size: 13px; }
+  .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   button, input { font: inherit; color: inherit; background: #151b2b;
                   border: 1px solid #263044; border-radius: 12px; }
-  button { padding: 14px 12px; cursor: pointer; }
+  button { padding: 12px; cursor: pointer; }
   button.on { border-color: #4fd1ff; color: #4fd1ff; }
-  button.wide { grid-column: 1 / -1; width: 100%; }
-  form { display: flex; gap: 10px; }
-  input[type=text], input[type=number] { min-width: 0; padding: 14px; }
+  button.chip { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; }
+  button.chip i { width: 14px; height: 14px; border-radius: 50%; border: 1px solid #3a465c;
+                  background: transparent; flex: 0 0 auto; }
+  button.chip.in i { background: #4fd1ff; border-color: #4fd1ff; }
+  .pills, .pair { display: flex; gap: 8px; }
+  .pills { margin-top: 10px; }
+  .pills button { flex: 1; border-radius: 999px; padding: 8px 10px; }
+  .pair { margin-top: 8px; }
+  .pair button { flex: 1; }
+  button.wide { width: 100%; margin-top: 8px; }
+  form { display: flex; gap: 8px; margin-top: 8px; }
+  input[type=text], input[type=number] { min-width: 0; padding: 12px; background: #0b0f1a; }
   input[type=text] { flex: 1; }
-  label.row { display: flex; align-items: center; gap: 10px; padding: 7px 2px; }
-  label.dwell { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
-  .drop { padding: 16px 10px; text-align: center; color: #8b95a7;
-          border: 1px dashed #263044; border-radius: 12px; }
+  input[type=number] { width: 64px; }
+  .drop { margin-top: 8px; padding: 22px 14px; text-align: center; color: #c5cedb;
+          border: 1px dashed #314056; border-radius: 14px; background: #0b0f1a; cursor: pointer; }
+  input[type=file] { display: none; }
+  .drop strong { display: block; font-weight: 650; color: #f5f7fa; }
+  .drop span { display: block; margin-top: 4px; color: #8b95a7; font-size: 13px; }
+  .drop.minor { padding: 12px; color: #8b95a7; }
   .drop.on { border-color: #4fd1ff; color: #4fd1ff; }
-  footer { margin-top: 28px; font-size: 13px; }
+  footer { margin-top: 18px; font-size: 13px; }
   footer a { color: #4fd1ff; text-decoration: none; }
+  [data-tip] { position: relative; }
+  [data-tip]:hover::after, [data-tip]:focus-visible::after {
+    content: attr(data-tip);
+    position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 5;
+    width: max-content; max-width: 220px;
+    padding: 6px 8px; border-radius: 8px;
+    background: #f5f7fa; color: #0b0f1a;
+    font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: 0;
+    text-transform: none; text-align: left; white-space: normal;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .35);
+    pointer-events: none;
+  }
+  .chip:has(i:hover)::after { content: none; }
 </style>
 <main>
   <header>
     <h1>RT100</h1>
-    <a class="repo" href="https://github.com/francescoiori/epomaker" target="_blank" rel="noopener">GitHub</a>
+    <a class="repo" href="https://github.com/francescoiori/epomaker" target="_blank" rel="noopener" data-tip="Open this project on GitHub">GitHub</a>
   </header>
   <section class="status" id="status">
     <p class="mode" id="mode">Connecting</p>
@@ -967,61 +1079,77 @@ PANEL_HTML = """<!doctype html>
     <p class="detail" id="detail"></p>
   </section>
   <div id="teams" hidden></div>
-  <div class="grid" id="pages"></div>
-  <div class="grid" style="margin-top:10px">
-    <button id="pause" type="button">Pause</button>
-    <button id="resume" type="button">Rotate</button>
-    <button id="stock" class="wide" type="button">Stock clock</button>
-    <button id="custom" class="wide" type="button">Custom screen</button>
-  </div>
-  <form id="line">
-    <input id="text" type="text" maxlength="90" placeholder="A line for the screen" autocomplete="off">
-    <button type="submit">Show</button>
-  </form>
-  <h2>Timer</h2>
-  <form id="timer">
-    <input id="minutes" type="number" min="1" max="180" value="5">
-    <button type="submit">Start</button>
-  </form>
-  <h2>Rotation</h2>
-  <div id="rotate"></div>
-  <label class="dwell">Each page
-    <input id="seconds" type="number" min="3" max="60" step="1" value="10">
-    seconds
-  </label>
-  <label class="row"><input id="quiet" type="checkbox"> Quiet desktop notifications</label>
-  <h2>Picture</h2>
-  <div class="grid">
-    <div class="drop" id="drop-small" data-size="64">Drop small<br>GIFs play</div>
-    <div class="drop" id="drop-large" data-size="120">Drop large<br>about 120px</div>
-  </div>
+  <section class="card">
+    <h2>Pages</h2>
+    <p class="hint">Tap a page to show it. The dot keeps it in the rotation.</p>
+    <div class="chips" id="pages"></div>
+    <div class="pills" id="dwell">
+      <button type="button" data-seconds="5" data-tip="Show each page for 5 seconds">5s</button>
+      <button type="button" data-seconds="10" data-tip="Show each page for 10 seconds">10s</button>
+      <button type="button" data-seconds="20" data-tip="Show each page for 20 seconds">20s</button>
+    </div>
+    <div class="pair">
+      <button id="pause" type="button" data-tip="Hold whatever is on the screen">Pause</button>
+      <button id="resume" type="button" data-tip="Cycle the pages marked with a dot">Rotate</button>
+    </div>
+    <button id="quiet" type="button" class="wide" data-tip="Stop desktop notifications from taking over the screen">Quiet notifications</button>
+  </section>
+  <section class="card">
+    <div class="pair">
+      <button id="stock" type="button" data-tip="Give the screen back to the keyboard's own clock">Stock clock</button>
+      <button id="custom" type="button" data-tip="Clear the screen and start drawing again">Custom screen</button>
+    </div>
+    <form id="line">
+      <input id="text" type="text" maxlength="90" placeholder="A line for the screen" autocomplete="off">
+      <button type="submit" data-tip="Send this line to the screen">Show</button>
+    </form>
+    <form id="timer">
+      <input id="minutes" type="number" min="1" max="180" value="5" aria-label="Minutes" data-tip="How many minutes to count">
+      <button type="submit" data-tip="Start a countdown on the screen">Start timer</button>
+    </form>
+  </section>
+  <section class="card">
+    <h2>Picture</h2>
+    <button id="stored" type="button" class="wide" data-tip="Play the four poses stored in the screen">Show stored picture</button>
+    <div class="drop" id="drop-main" data-size="200" data-tip="Click or drop a picture or GIF. It plays at 200px from the laptop.">
+      <strong>Upload a picture or GIF</strong>
+      <span>Click or drop. Plays at 200px from the laptop.</span>
+    </div>
+    <div class="drop minor" id="drop-full" data-size="240" data-tip="Click or drop a picture that fills the 240px panel. The first frame takes longer.">Edge to edge. The first frame is slower.</div>
+  </section>
   <footer>
     <a href="https://github.com/francescoiori/epomaker" target="_blank" rel="noopener">github.com/francescoiori/epomaker</a>
   </footer>
 </main>
 <script>
-const pages = [["clock","Clock"],["system","System"],["media","Now playing"],["weather","Weather"],["agenda","Next up"],["volume","Volume"]];
+const pages = [
+  ["clock","Clock","Show the clock"],
+  ["system","System","Show CPU, memory, temperature and battery"],
+  ["media","Now playing","Show the track that is playing"],
+  ["weather","Weather","Show the London weather"],
+  ["agenda","Next up","Show the next Teams meeting"],
+  ["volume","Volume","Show the speaker and microphone"],
+];
 const box = document.querySelector("#pages");
-const rot = document.querySelector("#rotate");
-for (const [id, label] of pages) {
+for (const [id, label, tip] of pages) {
   const b = document.createElement("button");
-  b.type = "button"; b.dataset.page = id; b.textContent = label;
+  b.type = "button"; b.className = "chip in"; b.dataset.page = id; b.dataset.tip = tip;
   b.onclick = () => send("page", id);
+  const mark = document.createElement("i");
+  mark.dataset.tip = "Keep this page in the rotation";
+  mark.onclick = (e) => { e.stopPropagation(); toggleRotate(id); };
+  b.append(document.createTextNode(label), mark);
   box.append(b);
-  const row = document.createElement("label");
-  row.className = "row";
-  const c = document.createElement("input");
-  c.type = "checkbox"; c.dataset.rotate = id;
-  c.onchange = saveRotation;
-  row.append(c, document.createTextNode(label));
-  rot.append(row);
 }
 document.querySelector("#pause").onclick = () => send("pause");
 document.querySelector("#resume").onclick = () => send("resume");
 document.querySelector("#stock").onclick = () => send("stock");
+document.querySelector("#stored").onclick = () => send("stored");
 document.querySelector("#custom").onclick = () => send("custom");
-document.querySelector("#seconds").onchange = saveRotation;
-document.querySelector("#quiet").onchange = (e) => send("quiet", e.target.checked ? "on" : "off");
+document.querySelectorAll("#dwell button").forEach(b => {
+  b.onclick = () => send("rotation", rotationNames().join(","), {seconds: Number(b.dataset.seconds)});
+});
+document.querySelector("#quiet").onclick = (e) => send("quiet", e.target.classList.contains("on") ? "off" : "on");
 document.querySelector("#line").onsubmit = (e) => {
   e.preventDefault();
   const input = document.querySelector("#text");
@@ -1032,27 +1160,42 @@ document.querySelector("#timer").onsubmit = (e) => {
   e.preventDefault();
   send("timer", document.querySelector("#minutes").value);
 };
+async function upload(drop, file) {
+  if (!file) return;
+  await fetch("/image?size=" + drop.dataset.size, {method: "POST", body: file});
+  refresh();
+}
 for (const drop of document.querySelectorAll(".drop")) {
+  const picker = document.createElement("input");
+  picker.type = "file";
+  picker.accept = "image/*,.gif";
+  drop.append(picker);
+  drop.onclick = () => picker.click();
+  picker.onchange = () => { upload(drop, picker.files[0]); picker.value = ""; };
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("on"); };
   drop.ondragleave = () => drop.classList.remove("on");
-  drop.ondrop = async (e) => {
+  drop.ondrop = (e) => {
     e.preventDefault();
     drop.classList.remove("on");
-    const file = e.dataTransfer.files[0];
-    if (!file) return;
-    await fetch("/image?size=" + drop.dataset.size, {method: "POST", body: file});
-    refresh();
+    upload(drop, e.dataTransfer.files[0]);
   };
 }
-function saveRotation() {
-  const names = [...document.querySelectorAll("[data-rotate]:checked")].map(b => b.dataset.rotate);
-  if (!names.length) { refresh(); return; }
-  send("rotation", names.join(","), {seconds: Number(document.querySelector("#seconds").value)});
+function rotationNames() {
+  const names = [...document.querySelectorAll(".chip.in")].map(b => b.dataset.page);
+  return names.length ? names : pages.map(p => p[0]);
+}
+function toggleRotate(id) {
+  const chip = document.querySelector('.chip[data-page="' + id + '"]');
+  chip.classList.toggle("in");
+  if (!document.querySelector(".chip.in")) chip.classList.add("in");
+  const dwell = document.querySelector("#dwell button.on");
+  send("rotation", rotationNames().join(","), {seconds: dwell ? Number(dwell.dataset.seconds) : 10});
 }
 function pageName(shown) {
   return {clock:"Clock", system:"System", media:"Now playing", weather:"Weather",
           agenda:"Next up", volume:"Volume", timer:"Timer",
           notify:"Notification", agent:"Agent", text:"Your text", image:"Image",
+          stored:"Stored picture", fast:"Picture",
           unplugged:"Unplugged", stock:"Stock clock"}[shown] || shown || "RT100";
 }
 function fillStatus(s) {
@@ -1085,16 +1228,18 @@ async function send(cmd, arg="", extra={}) {
 async function refresh() {
   const s = await fetch("/status").then(r => r.json());
   fillStatus(s);
-  document.querySelectorAll("[data-page]").forEach(b =>
-    b.classList.toggle("on", s.mode === "hold" && s.page === b.dataset.page));
+  document.querySelectorAll(".chip").forEach(b => {
+    b.classList.toggle("on", s.mode === "hold" && s.page === b.dataset.page);
+    b.classList.toggle("in", (s.pages || []).includes(b.dataset.page));
+  });
   document.querySelector("#pause").classList.toggle("on", s.mode === "hold" && !s.page);
   document.querySelector("#resume").classList.toggle("on", s.mode === "rotate");
   document.querySelector("#stock").classList.toggle("on", s.mode === "stock");
-  document.querySelectorAll("[data-rotate]").forEach(b => { b.checked = (s.pages || []).includes(b.dataset.rotate); });
-  const sec = document.querySelector("#seconds");
-  if (document.activeElement !== sec && s.seconds) sec.value = s.seconds;
-  const quiet = document.querySelector("#quiet");
-  if (document.activeElement !== quiet) quiet.checked = !!s.quiet;
+  document.querySelector("#stored").classList.toggle("on", s.page === "stored");
+  const choices = [5, 10, 20];
+  const nearest = choices.reduce((best, n) => Math.abs(n - s.seconds) < Math.abs(best - s.seconds) ? n : best, choices[0]);
+  document.querySelectorAll("#dwell button").forEach(b => b.classList.toggle("on", Number(b.dataset.seconds) === nearest));
+  document.querySelector("#quiet").classList.toggle("on", !!s.quiet);
   const teams = document.querySelector("#teams");
   const sign = s.teams || {};
   teams.replaceChildren();
@@ -1106,6 +1251,7 @@ async function refresh() {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "wide";
+    b.dataset.tip = "Open a browser window and allow calendar access";
     b.textContent = sign.waiting ? "Waiting for Teams…" : "Sign in to Teams";
     b.onclick = () => send("teams");
     teams.append(b);
@@ -1138,6 +1284,7 @@ class Control:
         self.text: str | None = None
         self.image: tuple[bytes, int] | None = None
         self.clip: dict | None = None
+        self.fast: dict | None = None
         self.timer_until: float | None = None
         self.enter = False
         self.shown = "starting"
@@ -1189,6 +1336,10 @@ class Control:
                 self.mode, self.page, self.enter = "rotate", None, True
                 self._clear_picture()
                 self.timer_until = None
+            elif cmd == "stored":
+                self._clear_picture()
+                self.timer_until = None
+                self.mode, self.page = "hold", "stored"
             elif cmd == "quiet":
                 self.quiet = arg.strip().lower() in ("1", "true", "on", "yes")
                 save_config({"quiet": self.quiet})
@@ -1210,13 +1361,21 @@ class Control:
     def _clear_picture(self) -> None:
         self.image = None
         self.clip = None
+        self.fast = None
 
     def show_image(self, blob: bytes, size: int) -> None:
+        fast = _prepare_fast(blob) if FAST_UPLOAD else None
         with self._lock:
-            self.mode, self.page = "hold", "image"
-            self.image = (blob, 120 if size >= 100 else 64)
-            self.clip = None
             self.timer_until = None
+            self.clip = None
+            if fast is not None:
+                self.mode, self.page = "hold", "fast"
+                self.fast = fast
+                self.image = None
+                return
+            self.fast = None
+            self.mode, self.page = "hold", "image"
+            self.image = (blob, 240 if size >= 220 else 200)
 
     def set_clip(self, frames: list) -> None:
         with self._lock:
@@ -1234,6 +1393,36 @@ class Control:
             clip["i"] = (clip["i"] + 1) % len(clip["frames"])
             clip["due"] = now + delay
             return frame
+
+    def rewind_fast(self) -> None:
+        with self._lock:
+            if self.fast is None:
+                return
+            self.fast["i"] = 0
+            self.fast["loops"] = 0
+            self.fast["due"] = 0.0
+
+    def next_fast_pose(self):
+        with self._lock:
+            fast = self.fast
+            if fast is None or self.page != "fast":
+                return None
+            now = time.monotonic()
+            if now < fast["due"]:
+                return None
+            i = fast["i"]
+            packets = fast["loop0"] if i == 0 and fast["loops"] else fast["poses"][i]
+            fast["i"] = (i + 1) % len(fast["poses"])
+            if fast["i"] == 0:
+                fast["loops"] += 1
+            fast["due"] = now + fast["delay"]
+            return packets
+
+    def fast_wait(self) -> float | None:
+        with self._lock:
+            if self.fast is None or self.page != "fast":
+                return None
+            return self.fast["due"] - time.monotonic()
 
     def clip_wait(self) -> float | None:
         with self._lock:
@@ -1363,6 +1552,43 @@ def _request_stop(signum: int, _frame) -> None:
     _stop.set()
 
 
+def _prepare_fast(blob: bytes):
+    """Encode an upload as the compact clip, or None if it cannot be encoded."""
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "device", "custom")
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    import gen_clip
+    try:
+        clip = gen_clip.encode_gif(blob)
+    except (OSError, ValueError):
+        return None
+    pal = clip["pal"]
+
+    def pose(data: bytes, key: bool, clear: bool):
+        frame = sp.Frame()
+        if key or clear:
+            frame.uhead(clip["w"], clip["h"], clip["x"], clip["y"], pal, clear)
+        if key:
+            frame.ukey(data)
+        elif data:
+            frame.urun(data)
+        return frame.packets()
+
+    # The first pose is sent once. Every later pass through the loop sends only
+    # the pixels that lead back to it, so the screen is not repainted from scratch.
+    poses = [pose(clip["key"], True, True)]
+    for delta in clip["deltas"]:
+        poses.append(pose(delta, False, False))
+    return {
+        "poses": poses,
+        "loop0": pose(clip["wrap"], False, False),
+        "i": 0,
+        "loops": 0,
+        "due": 0.0,
+        "delay": clip["delay"] if len(poses) > 1 else 1e9,
+    }
+
+
 def _fit_frame(img, size: int):
     from PIL import Image
     img = img.convert("RGB")
@@ -1395,16 +1621,37 @@ def _decode_clip(blob: bytes, size: int) -> list:
             canvas = previous
     if not frames:
         raise ValueError("empty image")
+    # Some GIFs end on a blank frame so the loop flashes black. Drop those.
+    while len(frames) > 1 and _mostly_blank(frames[-1][0]):
+        frames.pop()
     return frames
+
+
+def _mostly_blank(img, bg: tuple[int, int, int] = (0x0B, 0x0F, 0x1A)) -> bool:
+    px = img.get_flattened_data() if hasattr(img, "get_flattened_data") else img.getdata()
+    blank = total = 0
+    for pixel in px:
+        r, g, b = pixel[:3]
+        total += 1
+        if (r < 16 and g < 16 and b < 16) or (
+                abs(r - bg[0]) < 20 and abs(g - bg[1]) < 20 and abs(b - bg[2]) < 20):
+            blank += 1
+    return total > 0 and blank / total > 0.92
 
 
 def _send_image(link: Link, screen: Screen, img, clear: bool) -> None:
     frame = sp.Frame()
-    if clear:
+    last = getattr(screen, "last_image", None)
+    if clear or last is None or last.size != img.size:
         frame.begin(BG)
         screen.shown = {}
-    frame.image((sp.W - img.width) // 2, (sp.H - img.height) // 2, img)
-    link.send(frame.packets())
+        previous = None
+    else:
+        previous = last
+    frame.paint((sp.W - img.width) // 2, (sp.H - img.height) // 2, img, previous)
+    if frame.cmds:
+        link.send(frame.packets())
+    screen.last_image = img
     screen.page = "image"
 
 
@@ -1434,6 +1681,7 @@ def run(link: Link, pages: list[str], seconds: float, stay: bool, notify: bool =
                 continue
             mode, held, text, image, enter, quiet, rotate_pages, dwell = control.snapshot()
             blink = False
+            note_showing = False
             if not ready:
                 enter = mode != "stock"
                 ready = True
@@ -1450,8 +1698,21 @@ def run(link: Link, pages: list[str], seconds: float, stay: bool, notify: bool =
                         link.send(sp.Frame().end().packets())
                         screen.page, screen.shown = "stock", {}
                     control.mark("stock", "Stock clock")
+                elif mode == "hold" and held == "stored":
+                    if enter or screen.page != "stored":
+                        link.send(sp.Frame().clip().packets())
+                        screen.page, screen.shown = "stored", {}
+                    control.mark("stored", "Four poses, from the screen")
+                elif mode == "hold" and held == "fast":
+                    if enter:
+                        control.rewind_fast()
+                    packets = control.next_fast_pose()
+                    if packets:
+                        link.send(packets)
+                        screen.page, screen.shown = "fast", {}
+                    control.mark("fast", "Playing on the screen")
                 else:
-                    if enter or screen.page == "stock":
+                    if enter or screen.page in ("stock", "stored", "fast"):
                         link.send(sp.Frame().begin(BG).packets())
                         link.send([(sp.settime_packet(datetime.now()), 0)])
                         screen.page, screen.shown = None, {}
@@ -1494,6 +1755,7 @@ def run(link: Link, pages: list[str], seconds: float, stay: bool, notify: bool =
                         note = notes.current() if notes and not quiet else None
                         agent = agent_status()
                         if note:
+                            note_showing = True
                             screen.show("notify", notify_page(datetime.now(), note))
                             control.mark("notify", caption("notify", note))
                         elif agent:
@@ -1525,9 +1787,14 @@ def run(link: Link, pages: list[str], seconds: float, stay: bool, notify: bool =
             pause = max(0.05, 1 - (time.time() % 1))
             if blink:
                 pause = min(pause, 0.45)
+            if note_showing:
+                pause = min(pause, 0.25)
             wait = control.clip_wait()
             if wait is not None:
                 pause = min(pause, max(0.05, wait))
+            fast_wait = control.fast_wait()
+            if fast_wait is not None:
+                pause = min(pause, max(0.02, fast_wait))
             time.sleep(pause)
     finally:
         if link.alive and not stay and screen.page != "stock":
@@ -1641,8 +1908,8 @@ def main() -> None:
             sys.exit("usage: rt100screen.py image picture.png")
         from PIL import Image
         img = Image.open(a.arg)
-        img.thumbnail((sp.W, sp.H) if a.full else (64, 64))
-        packets = sp.Frame().begin(0).image((sp.W - img.width) // 2, (sp.H - img.height) // 2, img).packets()
+        img.thumbnail((sp.W, sp.H) if a.full else (200, 200))
+        packets = sp.Frame().begin(0).paint((sp.W - img.width) // 2, (sp.H - img.height) // 2, img).packets()
         print(f"{img.width}x{img.height}, {len(packets)} packets", flush=True)
         link.send(packets)
     del lock
