@@ -35,6 +35,7 @@ import urllib.request
 from dataclasses import dataclass
 from datetime import datetime
 
+import gcal
 import screenproto as sp
 import teamscal
 
@@ -664,11 +665,15 @@ def _dbus_string(line: str) -> str | None:
 
 
 class Notifications:
-    """Latest desktop notification (app name and summary only; the body is ignored)."""
+    """Latest desktop notification. Slack is included when it posts one.
+
+    The body is kept short and shown under the summary, so a Slack message is
+    visible and not only the channel name.
+    """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._latest: tuple[float, str, str] | None = None
+        self._latest: tuple[float, str, str, str] | None = None
         self._active = False
         self._strings: list[str] = []
         threading.Thread(target=self._listen, daemon=True).start()
@@ -682,40 +687,44 @@ class Notifications:
         stripped = line.strip()
         if (not stripped or line.startswith("method ") or line.startswith("signal ")
                 or stripped.startswith(("array", "dict", "variant"))):
+            if len(self._strings) >= 3:
+                body = self._strings[3] if len(self._strings) > 3 else ""
+                self._store(self._strings[0], self._strings[2], body)
             self._active = False
             return
         value = _dbus_string(line)
         if value is None:
             return
         self._strings.append(value)
-        if len(self._strings) == 3:  # app, icon, summary — stop before the body
-            self._store(self._strings[0], self._strings[2])
+        if len(self._strings) == 4:  # app, icon, summary, body
+            self._store(self._strings[0], self._strings[2], self._strings[3])
             self._active = False
 
-    def _store(self, app: str, summary: str) -> None:
+    def _store(self, app: str, summary: str, body: str) -> None:
         app, summary = app.strip(), summary.strip()
-        if not app and not summary:
+        body = " ".join(body.split())[:120]
+        if not app and not summary and not body:
             return
         now = time.monotonic()
         with self._lock:
             prev = self._latest
-            if prev and prev[1] == app and prev[2] == summary and now - prev[0] < 1.5:
+            if prev and prev[1:] == (app, summary, body) and now - prev[0] < 1.5:
                 return
-            self._latest = (now, app, summary)
+            self._latest = (now, app, summary, body)
 
     def current(self, hold: float = 10.0) -> dict | None:
         with self._lock:
             latest = self._latest
             if latest is None or time.monotonic() - latest[0] >= hold:
                 return None
-            app, summary = latest[1], latest[2]
+            app, summary, body = latest[1], latest[2], latest[3]
         classes, title = focused_window()
         if window_is_app(app, classes, title):
             with self._lock:
                 if self._latest is latest:
                     self._latest = None
             return None
-        return {"app": app, "summary": summary}
+        return {"app": app, "summary": summary, "body": body}
 
     def _listen(self) -> None:
         cmd = ["dbus-monitor", "--session",
@@ -875,9 +884,15 @@ def agent_page(now: datetime, a: dict) -> dict:
 
 
 def notify_page(_now: datetime, n: dict) -> dict:
-    w = {"title": title("notice"), "app": Text(16, 52, 13, n["app"], ACCENT)}
-    for i, line in enumerate(wrap(n["summary"], 13, 3)):
-        w[f"s{i}"] = Text(16, 96 + i * 36, 13, line, FG)
+    w = {"title": title("notice"), "app": Text(16, 48, 13, n["app"], ACCENT)}
+    body = n.get("body") or ""
+    if body.strip().lower() == (n.get("summary") or "").strip().lower():
+        body = ""
+    y = 92
+    for i, line in enumerate(wrap(n.get("summary") or "", 13, 2)):
+        w[f"s{i}"] = Text(16, y, 13, line, FG)
+        y += 34
+    w["b0"] = Text(16, y, 13, wrap(body, 13, 1)[0], MUTED)
     return w
 
 
@@ -887,23 +902,41 @@ def _agenda_loop() -> None:
             teamscal.poll()
         except Exception:
             pass
+        try:
+            gcal.poll()
+        except Exception:
+            pass
         _stop.wait(5)
 
 
+def _sooner(left: dict, right: dict) -> dict:
+    left_key = (bool(left.get("all_day")), float(left.get("start") or 0))
+    right_key = (bool(right.get("all_day")), float(right.get("start") or 0))
+    return left if left_key <= right_key else right
+
+
 def agenda_info() -> dict | None:
-    event = teamscal.next_event()
-    if event:
-        return event
-    info = teamscal.signin()
-    if info["signed_in"]:
+    chosen = None
+    for event in (teamscal.next_event(), gcal.next_event()):
+        if event:
+            chosen = event if chosen is None else _sooner(chosen, event)
+    if chosen:
+        return chosen
+    teams = teamscal.signin()
+    google = gcal.status()
+    if teams["signed_in"] or google["connected"]:
         return None
-    return {"when": "TEAMS", "title": "Sign in on the laptop"}
+    return {"when": "SIGN IN", "title": "Teams or Google"}
 
 
 def agenda_page(_now: datetime, a: dict) -> dict:
-    w = {"title": title("next"), "when": Text(16, 56, 13, a["when"], ACCENT, 2, "center")}
+    w = {
+        "title": title("next"),
+        "when": Text(16, 52, 13, a["when"], ACCENT, 2, "center"),
+        "src": Text(16, 88, 13, str(a.get("source") or ""), MUTED, 1, "center"),
+    }
     for i, line in enumerate(wrap(a["title"], 13, 3)):
-        w[f"t{i}"] = Text(16, 108 + i * 36, 13, line, FG)
+        w[f"t{i}"] = Text(16, 112 + i * 32, 13, line, FG)
     return w
 
 
@@ -955,14 +988,16 @@ def caption(shown: str, data=None, text: str = "") -> str:
     if shown == "weather" and isinstance(data, dict):
         return f"{data['temp']}C {data['label']}"
     if shown == "agenda" and isinstance(data, dict):
-        return (data.get("title") or "Nothing next")[:42]
+        source = data.get("source") or ""
+        title = data.get("title") or "Nothing next"
+        return (f"{source}: {title}" if source else title)[:42]
     if shown == "volume" and isinstance(data, dict):
         mic = " mic off" if data.get("mic_muted") else ""
         return ("Muted" if data.get("muted") else f"{round(min(data['level'], 1) * 100)}%") + mic
     if shown == "timer" and isinstance(data, dict):
         return "Done" if data.get("done") else f"{data['left'] // 60:02d}:{data['left'] % 60:02d}"
     if shown == "notify" and isinstance(data, dict):
-        return (data.get("summary") or data.get("app") or "Notification")[:42]
+        return (data.get("summary") or data.get("body") or data.get("app") or "Notification")[:42]
     if shown == "agent" and isinstance(data, dict):
         parts = [data.get("source") or "Agent", data.get("where") or "", AGENT_LABEL.get(data.get("state"), "")]
         return " · ".join(part for part in parts if part)[:42]
@@ -1018,9 +1053,8 @@ PANEL_HTML = """<!doctype html>
   .status .mode { margin: 0; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #8b95a7; }
   .status .screen { margin: 2px 0 0; font-size: 22px; font-weight: 650; }
   .status .detail { margin: 4px 0 0; color: #c5cedb; min-height: 1.2em; }
-  #teams { margin: 0 0 8px; }
-  #teams[hidden] { display: none; }
-  #teams .note { margin: 8px 2px 0; color: #8b95a7; font-size: 13px; }
+  #accounts .note { margin: 8px 2px 0; color: #8b95a7; font-size: 13px; }
+  #accounts .hint { margin: 8px 2px 0; }
   h2 { margin: 0 0 10px; font-size: 12px; letter-spacing: .14em; color: #8b95a7;
        font-weight: 650; text-transform: uppercase; }
   .card { margin-top: 14px; padding: 14px; background: #121826;
@@ -1078,7 +1112,12 @@ PANEL_HTML = """<!doctype html>
     <p class="screen" id="screen"></p>
     <p class="detail" id="detail"></p>
   </section>
-  <div id="teams" hidden></div>
+  <section class="card" id="accounts">
+    <h2>Accounts</h2>
+    <div id="teams"></div>
+    <div id="google"></div>
+    <p class="hint">Slack shows on the keyboard when Slack posts a desktop notification. It stays until that window is in front, or for 10 seconds. Quiet notifications turns this off.</p>
+  </section>
   <section class="card">
     <h2>Pages</h2>
     <p class="hint">Tap a page to show it. The dot keeps it in the rotation.</p>
@@ -1127,7 +1166,7 @@ const pages = [
   ["system","System","Show CPU, memory, temperature and battery"],
   ["media","Now playing","Show the track that is playing"],
   ["weather","Weather","Show the London weather"],
-  ["agenda","Next up","Show the next Teams meeting"],
+  ["agenda","Next up","Show the next Teams or Google event"],
   ["volume","Volume","Show the speaker and microphone"],
 ];
 const box = document.querySelector("#pages");
@@ -1244,10 +1283,13 @@ async function refresh() {
   const sign = s.teams || {};
   teams.replaceChildren();
   if (sign.signed_in) {
-    teams.hidden = !sign.error;
-    if (sign.error) teams.textContent = sign.error;
+    if (sign.error) {
+      const note = document.createElement("p");
+      note.className = "note";
+      note.textContent = sign.error;
+      teams.append(note);
+    }
   } else {
-    teams.hidden = false;
     const b = document.createElement("button");
     b.type = "button";
     b.className = "wide";
@@ -1262,6 +1304,23 @@ async function refresh() {
       teams.append(note);
     }
   }
+  const google = document.querySelector("#google");
+  const cal = s.google || {};
+  google.replaceChildren();
+  if (!cal.pending && !cal.connected) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "wide";
+    b.dataset.tip = "Open Ubuntu Settings so you can add a Google account";
+    b.textContent = "Add Google account";
+    b.onclick = () => send("google");
+    google.append(b);
+  }
+  const note = document.createElement("p");
+  note.className = "note";
+  note.textContent = cal.pending ? "Checking Google calendar…"
+    : (cal.error || (cal.connected ? "Google calendar is on." : "Uses the Google account in Ubuntu Settings."));
+  google.append(note);
 }
 refresh();
 setInterval(refresh, 1000);
@@ -1302,6 +1361,9 @@ class Control:
     def command(self, cmd: str, arg: str = "", data: dict | None = None) -> bool:
         if cmd == "teams":
             teamscal.begin()
+            return True
+        if cmd == "google":
+            gcal.open_settings()
             return True
         with self._lock:
             if cmd == "resume":
@@ -1472,7 +1534,8 @@ class Control:
         with self._lock:
             return {"mode": self.mode, "page": self.page, "shown": self.shown,
                     "detail": self.detail, "quiet": self.quiet, "pages": list(self.pages),
-                    "seconds": self.seconds, "link": self.link, "teams": teamscal.signin()}
+                    "seconds": self.seconds, "link": self.link,
+                    "teams": teamscal.signin(), "google": gcal.status()}
 
 
 def serve_panel(control: Control, port: int = 8765) -> None:

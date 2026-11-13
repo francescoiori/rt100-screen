@@ -140,11 +140,18 @@ def _event_from(item: dict) -> dict | None:
     if ends <= datetime.now():
         return None
     title = " ".join(str(item.get("subject") or "Busy").split())
-    if item.get("isAllDay"):
+    all_day = bool(item.get("isAllDay"))
+    if all_day:
         when = begins.strftime("%a").upper() + " ALL DAY"
     else:
         when = begins.strftime("%a %H:%M").upper()
-    return {"when": when, "title": title[:80]}
+    return {
+        "when": when,
+        "title": title[:80],
+        "start": begins.timestamp(),
+        "all_day": all_day,
+        "source": "Teams",
+    }
 
 
 def _refresh_events(token: str) -> None:

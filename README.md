@@ -85,7 +85,8 @@ From that page you can:
 - Click or drop a picture or a GIF. A GIF keeps its frames, up to 24, and loops
 - Start a timer
 - Set the weather city
-- Sign in for the next Teams meeting
+- Sign in for the next Teams meeting, or add the Google account Ubuntu already uses
+- Slack messages appear when Slack posts a desktop notification
 
 The top-bar icon, when installed, opens the same controls.
 
@@ -107,10 +108,10 @@ These are the desktop services the pages talk to. On this machine they are the U
 
 - **Now playing** reads MPRIS on the session bus (`busctl`). Players that publish MPRIS show up. A player that does not will leave that page blank.
 - **Volume** reads PipeWire through `wpctl`, which Ubuntu installs. A system with only the older PulseAudio tools and no `wpctl` will not show a level.
-- **Notifications** watch the desktop notification bus with `dbus-monitor`. The screen shows the application name and the summary for 10 seconds, or until that application's window is the one in front. The notification body is left off so a long message cannot fill the panel. Quiet mode on the control page turns this off.
+- **Notifications** watch the desktop notification bus with `dbus-monitor`. The screen shows the application name, the summary, and a short line of the message for 10 seconds, or until that application's window is the one in front. Slack is included when Slack is allowed to post desktop notifications. There is no separate Slack login. Quiet mode on the control page turns this off.
 - **CPU, memory, temperature, battery** come from `psutil`. Temperature prefers a `coretemp` package sensor, which is what this laptop reports. A desktop with no battery simply omits that line.
 - **Weather** asks Open-Meteo. Nothing is fetched until a city is saved.
-- **Next meeting** is the Teams calendar through Microsoft Graph in the browser, as the "Microsoft Graph Command Line Tools" app. GNOME's own Microsoft account does not provide the calendar to this program. Signing in needs a browser.
+- **Next meeting** is the sooner of the Teams calendar and the Google calendars. Teams uses Microsoft Graph in the browser, as the "Microsoft Graph Command Line Tools" app. GNOME's own Microsoft account does not provide that calendar, so Teams needs its own sign-in. Google uses the Google account in Ubuntu Settings, under Online Accounts, and Evolution reads it. Holiday calendars are left out. The control page has a button for each.
 - **The control window** prefers Chrome or Chromium in a small app window. Without either, it opens http://127.0.0.1:8765 in whatever browser `xdg-open` uses. The page itself is the same.
 
 Agent notices (Cursor and Claude writing `~/.local/state/rt100screen/agent.json`) are a separate local hook. `install.sh` does not install those hooks. The window title on that page is read with `xwininfo` on display `:1`, which matches this Ubuntu session. On another seat, or on Wayland without that X display, the page still works and shows the project folder instead of the window title.

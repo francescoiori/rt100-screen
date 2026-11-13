@@ -11,13 +11,14 @@ alwaysApply: true
   opcode `0x11`, plus upload opcodes `0x12`–`0x14`). A stored-clip loop does not
   clear the panel. Do not rebuild/reflash it for host-side work.
 - `screen/rt100screen.py run` rotates clock, system, now-playing, weather, next meeting
-  and volume. A desktop notification (app + summary only) replaces the page for 10 s.
-  `--no-notify` disables that. Battery is on the system page. A timer is started from
-  the control page.
-- Next meeting is the Teams calendar (`screen/teamscal.py`), not the Google calendars
-  in GNOME. Sign-in opens a browser as Microsoft Graph Command Line Tools; the GNOME
-  app cannot read calendars. The token lives in `~/.config/rt100screen-teams.json`
-  (mode 0600). Do not print it, and do not commit it.
+  and volume. A desktop notification (app, summary, and a short message line) replaces
+  the page for 10 s, including Slack when Slack posts one. `--no-notify` disables that.
+  Battery is on the system page. A timer is started from the control page.
+- Next meeting is the sooner of Teams (`screen/teamscal.py`) and Google (`screen/gcal.py`).
+  Teams sign-in opens a browser as Microsoft Graph Command Line Tools; the GNOME app
+  cannot read that calendar. The token lives in `~/.config/rt100screen-teams.json`
+  (mode 0600). Do not print it, and do not commit it. Google is the account already
+  in Ubuntu Online Accounts, read through Evolution. Do not print event titles or tokens.
 - Weather reads `~/.config/rt100screen.json`. It is set to London (51.513, -0.092).
   Change it only when the user asks: `screen/rt100screen.py location CITY`.
 - Agent alerts: Cursor `stop` and Claude `Stop`/`Notification` write
