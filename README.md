@@ -6,17 +6,23 @@ The program runs on Linux and talks to the screen through the keyboard cable. It
 
 ## What it looks like
 
-The control app is a small window on the computer. It chooses the pages, starts a timer, and takes a picture or GIF.
+The screen on the keyboard is 240 by 240.
 
-<img src="docs/app.png" alt="RT100 control app" width="320">
+<p align="center">
+<img src="docs/screen-clock.png" alt="Clock" width="140">
+<img src="docs/screen-system.png" alt="System" width="140">
+<img src="docs/screen-playing.png" alt="Now playing" width="140">
+<img src="docs/screen-notice.png" alt="Notification" width="140">
+<img src="docs/screen-picture.png" alt="Uploaded picture" width="140">
+<br>
+Clock, system, now playing, a notification, and a picture.
+</p>
 
-The keyboard screen is 240 by 240. These are pages it draws:
+The control app is a window on the computer. It chooses the pages, starts a timer, and takes a picture or GIF.
 
-<img src="docs/screen-clock.png" alt="Clock" width="160">
-<img src="docs/screen-system.png" alt="System" width="160">
-<img src="docs/screen-playing.png" alt="Now playing" width="160">
-<img src="docs/screen-notice.png" alt="Notification" width="160">
-<img src="docs/screen-picture.png" alt="Uploaded picture" width="160">
+<p align="center">
+<img src="docs/app.png" alt="RT100 control app" width="720">
+</p>
 
 ## Read this before flashing
 
